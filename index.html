@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morgen Company Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Morgen Company</p>
+          <h1>Super simpel liquiditeitsdashboard</h1>
+          <p class="intro">
+            Voer handmatig projecten en terugkerende kosten in en zie per maand
+            hoe Karin en Harmen ervoor staan.
+          </p>
+        </div>
+        <div class="hero-notes">
+          <span>Geen koppelingen</span>
+          <span>Opslag in je browser</span>
+          <span>Gedeeld = 50/50</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Basis</p>
+              <h2>Planning en beginsaldo</h2>
+            </div>
+            <button id="reset-demo" class="ghost-button" type="button">
+              Herstel voorbeelddata
+            </button>
+          </div>
+
+          <form id="settings-form" class="settings-form">
+            <label>
+              <span>Planning start</span>
+              <input name="planningStartMonth" type="month" required />
+            </label>
+            <label>
+              <span>Aantal maanden</span>
+              <input
+                name="monthsToShow"
+                type="number"
+                min="3"
+                max="24"
+                required
+              />
+            </label>
+            <label>
+              <span>Beginsaldo Karin</span>
+              <input
+                name="karinOpeningBalance"
+                type="number"
+                step="0.01"
+                required
+              />
+            </label>
+            <label>
+              <span>Beginsaldo Harmen</span>
+              <input
+                name="harmenOpeningBalance"
+                type="number"
+                step="0.01"
+                required
+              />
+            </label>
+            <button class="primary-button" type="submit">Opslaan</button>
+          </form>
+
+          <p class="helper-text">
+            Liquiditeit wordt berekend vanaf de gekozen startmaand. Alles blijft
+            lokaal opgeslagen op deze computer.
+          </p>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Momentopname</p>
+              <h2>Status van een maand</h2>
+            </div>
+            <label class="month-picker">
+              <span>Kies maand</span>
+              <input id="focus-month" type="month" />
+            </label>
+          </div>
+
+          <div id="focus-cards" class="focus-cards"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Projecten</p>
+              <h2>Projectbeeld in gekozen maand</h2>
+            </div>
+          </div>
+
+          <div class="project-overview-header">
+            <p id="overhead-note" class="helper-text"></p>
+          </div>
+          <div id="project-summary" class="project-summary-grid"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Per maand</p>
+              <h2>Liquiditeitsoverzicht</h2>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Maand</th>
+                  <th>Karin omzet</th>
+                  <th>Karin kosten</th>
+                  <th>Karin eind</th>
+                  <th>Harmen omzet</th>
+                  <th>Harmen kosten</th>
+                  <th>Harmen eind</th>
+                  <th>Samen eind</th>
+                </tr>
+              </thead>
+              <tbody id="monthly-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Input</p>
+              <h2>Project toevoegen</h2>
+            </div>
+          </div>
+
+          <form id="project-form" class="stack-form">
+            <label>
+              <span>Projectnaam</span>
+              <input name="name" type="text" placeholder="Bijv. Avans sprint" required />
+            </label>
+            <label>
+              <span>Omzet per maand</span>
+              <input name="monthlyRevenue" type="number" step="0.01" required />
+            </label>
+            <label>
+              <span>Valt onder</span>
+              <select name="owner" required>
+                <option value="karin">Karin</option>
+                <option value="harmen">Harmen</option>
+                <option value="shared">Gedeeld 50/50</option>
+              </select>
+            </label>
+            <label>
+              <span>Startmaand</span>
+              <input name="startMonth" type="month" required />
+            </label>
+            <label>
+              <span>Eindmaand</span>
+              <input name="endMonth" type="month" />
+            </label>
+            <label>
+              <span>Notitie</span>
+              <textarea
+                name="notes"
+                rows="3"
+                placeholder="Optioneel: korte context of afspraak"
+              ></textarea>
+            </label>
+
+            <div class="form-actions">
+              <button id="project-submit" class="primary-button" type="submit">
+                Project opslaan
+              </button>
+              <button id="project-cancel" class="ghost-button" type="button" hidden>
+                Annuleer
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Lijst</p>
+              <h2>Bestaande projecten</h2>
+            </div>
+          </div>
+
+          <div id="project-list" class="entry-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Input</p>
+              <h2>Terugkerende kosten</h2>
+            </div>
+          </div>
+
+          <form id="cost-form" class="stack-form">
+            <label>
+              <span>Kostenregel</span>
+              <input name="label" type="text" placeholder="Bijv. Notion of reis" required />
+            </label>
+            <label>
+              <span>Bedrag per maand</span>
+              <input name="amount" type="number" step="0.01" required />
+            </label>
+            <label>
+              <span>Valt onder</span>
+              <select name="owner" required>
+                <option value="karin">Karin</option>
+                <option value="harmen">Harmen</option>
+                <option value="shared">Gedeeld 50/50</option>
+              </select>
+            </label>
+            <label>
+              <span>Project</span>
+              <select name="projectId" id="cost-project-select">
+                <option value="">Algemene kosten</option>
+              </select>
+            </label>
+            <label>
+              <span>Startmaand</span>
+              <input name="startMonth" type="month" required />
+            </label>
+            <label>
+              <span>Eindmaand</span>
+              <input name="endMonth" type="month" />
+            </label>
+
+            <div class="form-actions">
+              <button id="cost-submit" class="primary-button" type="submit">
+                Kosten opslaan
+              </button>
+              <button id="cost-cancel" class="ghost-button" type="button" hidden>
+                Annuleer
+              </button>
+            </div>
+          </form>
+
+          <p class="helper-text">
+            Wil je een kostenpost over meerdere projecten verdelen? Maak dan
+            meerdere regels met een deelbedrag.
+          </p>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Lijst</p>
+              <h2>Bestaande kostenregels</h2>
+            </div>
+          </div>
+
+          <div id="cost-list" class="entry-list"></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
