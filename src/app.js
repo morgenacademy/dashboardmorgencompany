@@ -56,6 +56,7 @@ const GOALS_2026 = {
 };
 
 const ACCEPTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
+const INTERNAL_HOURLY_RATE = 80;
 // Potentieel = nog niet zeker (lead → offerte verzonden)
 const POTENTIAL_STAGES = ['verkennen','1e_gesprek','offerte_verzonden'];
 // Toegezegd = klant heeft ja gezegd, werk gaat gebeuren / loopt / is af
@@ -847,6 +848,7 @@ function renderProjectForm(db, project) {
             <label><span>Label</span><select name="service_label">${selectOptions(SERVICE_LABELS, project?.service_label || 'other')}</select></label>
             <label><span>Forecast (EUR)</span><input type="number" step="0.01" name="forecast_amount" value="${project?.forecast_amount || 0}" /></label>
             <label><span>Werkelijk (EUR)</span><input type="number" step="0.01" name="actual_amount" value="${project?.actual_amount || 0}" /></label>
+            <label><span>Geschatte uren</span><input type="number" step="0.5" name="estimated_hours" value="${project?.estimated_hours || 0}" /></label>
             <label><span>Pricing model</span>
               <select name="pricing_model">
                 <option value="project" ${project?.pricing_model === 'project' ? 'selected' : ''}>Project (vast)</option>
@@ -894,6 +896,12 @@ function renderProjectDetail(db, projectId) {
   const doneTasks = tasks.filter((t) => t.status === 'done');
   const finance = db.finance.filter((f) => f.project_id === projectId);
   const incomeTotal = finance.filter((f) => f.type === 'income').reduce((s, f) => s + Number(f.amount), 0);
+  const directExpenseTotal = finance.filter((f) => f.type === 'expense').reduce((s, f) => s + Number(f.amount), 0);
+  const hours = Number(project.estimated_hours || 0);
+  const hoursCost = hours * INTERNAL_HOURLY_RATE;
+  const revenueForMargin = Number(project.actual_amount || project.forecast_amount || project.value_amount || 0);
+  const margin = revenueForMargin - directExpenseTotal - hoursCost;
+  const marginPct = revenueForMargin ? margin / revenueForMargin : 0;
 
   const taskRow = (t) => {
     const meetingInfo = t.meeting_at
@@ -930,8 +938,10 @@ function renderProjectDetail(db, projectId) {
       <div class="metric-grid">
         ${metricCard('Forecast', fmtCurrency(project.forecast_amount), project.pricing_model === 'recurring_monthly' ? '/ maand' : project.pricing_model, 'warning')}
         ${metricCard('Werkelijk', fmtCurrency(project.actual_amount), 'goedgekeurd / opgeleverd', 'success')}
+        ${metricCard('Directe kosten', fmtCurrency(directExpenseTotal), `${finance.filter((f) => f.type === 'expense').length} expense-regel(s)`, directExpenseTotal > 0 ? 'warning' : 'default')}
+        ${metricCard('Uren × €' + INTERNAL_HOURLY_RATE, fmtCurrency(hoursCost), `${fmtNumber(hours, 1)} uur geschat`)}
+        ${metricCard('Marge', fmtCurrency(margin), revenueForMargin ? `${fmtNumber(marginPct * 100, 0)}% van revenue` : '—', margin > 0 ? 'success' : 'danger')}
         ${metricCard('Open taken', openTasks.length, `${doneTasks.length} klaar`)}
-        ${metricCard('Income geboekt', fmtCurrency(incomeTotal), `${finance.length} regel(s)`)}
         ${metricCard('Volgende actie', project.next_action_date ? dueLabel(project.next_action_date) : '—', project.next_action || '', dueTone(project.next_action_date))}
       </div>
 
@@ -1232,29 +1242,34 @@ function renderFinance(db) {
       </section>
 
       <section class="panel">
-        <div class="panel-heading"><div><h2>Alle regels</h2><p>${db.finance.length} totaal</p></div></div>
-        ${table(
-          ['Datum','Type','Beschrijving','Vendor','Bedrag','Categorie','Project','Betaalstatus'],
-          db.finance.map((f) => {
-            const proj = f.project_id ? projectsById[f.project_id] : null;
-            const cust = proj ? customersById[proj.customer_id] : null;
-            return [
+        <div class="panel-heading"><div><h2>Alle regels</h2><p>${db.finance.length} totaal · klik in "Project" om kosten te alloceren</p></div></div>
+        ${(() => {
+          const projectsOrdered = db.projects.slice()
+            .sort((a, b) => (customersById[a.customer_id]?.name || '').localeCompare(customersById[b.customer_id]?.name || ''));
+          const projectSelect = (currentId, finId) => `
+            <select data-action="finance-project" data-id="${escapeHtml(finId)}" style="font-size:.78rem;max-width:240px;">
+              <option value=""${currentId ? '' : ' selected'}>— niet gekoppeld —</option>
+              ${projectsOrdered.map((p) => `<option value="${escapeHtml(p.id)}"${p.id === currentId ? ' selected' : ''}>${escapeHtml(customersById[p.customer_id]?.name || '')} · ${escapeHtml(p.name)}</option>`).join('')}
+            </select>`;
+          return table(
+            ['Datum','Type','Beschrijving','Vendor','Bedrag','Categorie','Project','Betaalstatus'],
+            db.finance.map((f) => [
               fmtDate(f.date),
               badge(f.type === 'income' ? 'in' : 'uit', f.type === 'income' ? 'success' : 'warning'),
               escapeHtml(f.description),
               escapeHtml(f.vendor || ''),
               (f.type === 'expense' ? '-' : '+') + fmtCurrency(f.amount),
               escapeHtml(f.category || ''),
-              proj ? `<a href="#/projecten/${escapeHtml(proj.id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj.name)}</a>` : '<span class="muted">—</span>',
+              projectSelect(f.project_id || '', f.id),
               f.type === 'income'
                 ? `<select data-action="payment-status" data-id="${escapeHtml(f.id)}">
                      ${['verwacht','gefactureerd','ontvangen','afgeschreven'].map((v) => `<option value="${v}" ${f.payment_status === v ? 'selected' : ''}>${v}</option>`).join('')}
                    </select>`
                 : escapeHtml(f.factuur_status || ''),
-            ];
-          }),
-          { compact: true },
-        )}
+            ]),
+            { compact: true },
+          );
+        })()}
       </section>
     </section>`;
 }
@@ -1433,6 +1448,16 @@ function attachEvents() {
     });
   });
 
+  document.querySelectorAll('[data-action="finance-project"]').forEach((sel) => {
+    sel.addEventListener('change', async (e) => {
+      const id = e.target.dataset.id;
+      const entry = getDatabase().finance.find((f) => f.id === id);
+      if (!entry) return;
+      entry.project_id = e.target.value || null;
+      await upsertFinance(entry);
+    });
+  });
+
   document.querySelectorAll('[data-action="delete-task"]').forEach((button) => {
     button.addEventListener('click', async (e) => {
       const id = e.currentTarget.dataset.taskId;
@@ -1485,6 +1510,7 @@ function attachEvents() {
     data.value_amount = data.actual_amount || data.forecast_amount;
     data.is_breakthrough = data.is_breakthrough === 'true';
     if (!data.lead_source) data.lead_source = 'netwerk';
+    data.estimated_hours = Number(data.estimated_hours || 0);
     ['start_date','accepted_date','next_action_date','end_date'].forEach((k) => { if (!data[k]) data[k] = null; });
     try {
       await upsertProject(data);
