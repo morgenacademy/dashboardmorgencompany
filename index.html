@@ -12,16 +12,7 @@
       <header class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Morgen Company</p>
-          <h1>Super simpel liquiditeitsdashboard</h1>
-          <p class="intro">
-            Voer handmatig projecten en terugkerende kosten in en zie per maand
-            hoe Karin en Harmen ervoor staan.
-          </p>
-        </div>
-        <div class="hero-notes">
-          <span>Geen koppelingen</span>
-          <span>Opslag in je browser</span>
-          <span>Gedeeld = 50/50</span>
+          <h1>Dashboard</h1>
         </div>
       </header>
 
@@ -29,241 +20,214 @@
         <section class="panel panel-wide">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">Basis</p>
-              <h2>Planning en beginsaldo</h2>
+              <p class="section-kicker">Champagne Momenten</p>
+              <h2>Doelen en status van het gekozen jaar</h2>
             </div>
-            <button id="reset-demo" class="ghost-button" type="button">
-              Herstel voorbeelddata
-            </button>
           </div>
-
-          <form id="settings-form" class="settings-form">
-            <label>
-              <span>Planning start</span>
-              <input name="planningStartMonth" type="month" required />
-            </label>
-            <label>
-              <span>Aantal maanden</span>
-              <input
-                name="monthsToShow"
-                type="number"
-                min="3"
-                max="24"
-                required
-              />
-            </label>
-            <label>
-              <span>Beginsaldo Karin</span>
-              <input
-                name="karinOpeningBalance"
-                type="number"
-                step="0.01"
-                required
-              />
-            </label>
-            <label>
-              <span>Beginsaldo Harmen</span>
-              <input
-                name="harmenOpeningBalance"
-                type="number"
-                step="0.01"
-                required
-              />
-            </label>
-            <button class="primary-button" type="submit">Opslaan</button>
-          </form>
-
-          <p class="helper-text">
-            Liquiditeit wordt berekend vanaf de gekozen startmaand. Alles blijft
-            lokaal opgeslagen op deze computer.
-          </p>
+          <div id="goal-kpis" class="goal-grid"></div>
         </section>
 
         <section class="panel panel-wide">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">Momentopname</p>
-              <h2>Status van een maand</h2>
+              <p class="section-kicker">Labels</p>
+              <h2>Forecast per label</h2>
             </div>
-            <label class="month-picker">
-              <span>Kies maand</span>
-              <input id="focus-month" type="month" />
-            </label>
           </div>
-
-          <div id="focus-cards" class="focus-cards"></div>
+          <div id="category-revenue" class="category-grid"></div>
         </section>
 
         <section class="panel panel-wide">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">Projecten</p>
-              <h2>Projectbeeld in gekozen maand</h2>
+              <p class="section-kicker">Grafiek</p>
+              <h2>Opbrengst, kosten en forecast</h2>
+            </div>
+            <div class="section-actions">
+              <label class="month-picker">
+                <span>Kies jaar</span>
+                <select id="focus-year"></select>
+              </label>
+              <button id="reset-demo" class="ghost-button" type="button">
+                Herstel basisdata
+              </button>
             </div>
           </div>
+          <div id="team-liquidity" class="liquidity-chart"></div>
+        </section>
 
-          <div class="project-overview-header">
-            <p id="overhead-note" class="helper-text"></p>
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Klantenbeeld</p>
+              <h2>Potentieel, toegezegd en gefactureerd</h2>
+            </div>
           </div>
-          <div id="project-summary" class="project-summary-grid"></div>
+          <div id="customer-board" class="customer-grid"></div>
         </section>
 
         <section class="panel panel-wide">
           <div class="section-heading">
             <div>
               <p class="section-kicker">Per maand</p>
-              <h2>Liquiditeitsoverzicht</h2>
+              <h2>Maandelijkse forecast binnen het jaar</h2>
             </div>
           </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Maand</th>
-                  <th>Karin omzet</th>
-                  <th>Karin kosten</th>
-                  <th>Karin eind</th>
-                  <th>Harmen omzet</th>
-                  <th>Harmen kosten</th>
-                  <th>Harmen eind</th>
-                  <th>Samen eind</th>
-                </tr>
-              </thead>
-              <tbody id="monthly-table-body"></tbody>
-            </table>
-          </div>
+          <div id="monthly-performance"></div>
         </section>
 
-        <section class="panel">
+        <section class="panel panel-wide">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">Input</p>
-              <h2>Project toevoegen</h2>
+              <p class="section-kicker">Beheer</p>
+              <h2>Data aanpassen</h2>
             </div>
           </div>
 
-          <form id="project-form" class="stack-form">
-            <label>
-              <span>Projectnaam</span>
-              <input name="name" type="text" placeholder="Bijv. Avans sprint" required />
-            </label>
-            <label>
-              <span>Omzet per maand</span>
-              <input name="monthlyRevenue" type="number" step="0.01" required />
-            </label>
-            <label>
-              <span>Valt onder</span>
-              <select name="owner" required>
-                <option value="karin">Karin</option>
-                <option value="harmen">Harmen</option>
-                <option value="shared">Gedeeld 50/50</option>
-              </select>
-            </label>
-            <label>
-              <span>Startmaand</span>
-              <input name="startMonth" type="month" required />
-            </label>
-            <label>
-              <span>Eindmaand</span>
-              <input name="endMonth" type="month" />
-            </label>
-            <label>
-              <span>Notitie</span>
-              <textarea
-                name="notes"
-                rows="3"
-                placeholder="Optioneel: korte context of afspraak"
-              ></textarea>
-            </label>
-
-            <div class="form-actions">
-              <button id="project-submit" class="primary-button" type="submit">
-                Project opslaan
-              </button>
-              <button id="project-cancel" class="ghost-button" type="button" hidden>
-                Annuleer
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section class="panel">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Lijst</p>
-              <h2>Bestaande projecten</h2>
-            </div>
+          <div class="management-actions">
+            <button id="add-project-button" class="primary-button" type="button">
+              Klant toevoegen
+            </button>
+            <button id="add-cost-button" class="ghost-button" type="button">
+              Kosten toevoegen
+            </button>
           </div>
 
-          <div id="project-list" class="entry-list"></div>
-        </section>
+          <div class="management-inventory">
+            <section class="management-list-card">
+              <div class="management-list-header">
+                <div>
+                  <div class="section-label">Klanten</div>
+                  <h3>Bestaande klanten en trajecten</h3>
+                </div>
+              </div>
+              <div id="project-list" class="inventory-grid"></div>
+            </section>
 
-        <section class="panel">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Input</p>
-              <h2>Terugkerende kosten</h2>
-            </div>
+            <section class="management-list-card">
+              <div class="management-list-header">
+                <div>
+                  <div class="section-label">Kosten</div>
+                  <h3>Terugkerende kosten</h3>
+                </div>
+              </div>
+              <div id="cost-list" class="inventory-grid"></div>
+            </section>
           </div>
 
-          <form id="cost-form" class="stack-form">
-            <label>
-              <span>Kostenregel</span>
-              <input name="label" type="text" placeholder="Bijv. Notion of reis" required />
-            </label>
-            <label>
-              <span>Bedrag per maand</span>
-              <input name="amount" type="number" step="0.01" required />
-            </label>
-            <label>
-              <span>Valt onder</span>
-              <select name="owner" required>
-                <option value="karin">Karin</option>
-                <option value="harmen">Harmen</option>
-                <option value="shared">Gedeeld 50/50</option>
-              </select>
-            </label>
-            <label>
-              <span>Project</span>
-              <select name="projectId" id="cost-project-select">
-                <option value="">Algemene kosten</option>
-              </select>
-            </label>
-            <label>
-              <span>Startmaand</span>
-              <input name="startMonth" type="month" required />
-            </label>
-            <label>
-              <span>Eindmaand</span>
-              <input name="endMonth" type="month" />
-            </label>
+          <div class="management-grid">
+            <details class="management-card" id="project-panel">
+              <summary>Project of klant opvoeren</summary>
+              <form id="project-form" class="stack-form">
+                <label>
+                  <span>Klant of project</span>
+                  <input name="name" type="text" placeholder="Bijv. Zjoske Kanters" required />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select name="stage" required>
+                    <option value="pipeline">Potentieel</option>
+                    <option value="active">Toegezegd, nog niet gefactureerd</option>
+                    <option value="completed">Gefactureerd</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Bedrag</span>
+                  <input name="monthlyRevenue" type="number" step="0.01" required />
+                </label>
+                <label>
+                  <span>Categorie</span>
+                  <select name="category" required>
+                    <option value="uncategorized">Nog in te delen</option>
+                    <option value="train">Train</option>
+                    <option value="build">Build</option>
+                    <option value="implement">Implement</option>
+                    <option value="inspire">Inspire</option>
+                  </select>
+                </label>
+                <label class="checkbox-field">
+                  <input name="outsideNetwork" type="checkbox" />
+                  <span>Klant buiten eigen netwerk</span>
+                </label>
+                <label>
+                  <span>Valt onder</span>
+                  <select name="owner" required>
+                    <option value="karin">Karin</option>
+                    <option value="harmen">Harmen</option>
+                    <option value="shared">Gedeeld 50/50</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Startmaand</span>
+                  <input name="startMonth" type="month" required />
+                </label>
+                <label>
+                  <span>Eindmaand</span>
+                  <input name="endMonth" type="month" />
+                </label>
+                <label>
+                  <span>Notitie</span>
+                  <textarea
+                    name="notes"
+                    rows="3"
+                    placeholder="Bijv. resterende 50% staat nog open"
+                  ></textarea>
+                </label>
+                <div class="form-actions">
+                  <button id="project-submit" class="primary-button" type="submit">
+                    Project opslaan
+                  </button>
+                  <button id="project-cancel" class="ghost-button" type="button" hidden>
+                    Annuleer
+                  </button>
+                </div>
+              </form>
+            </details>
 
-            <div class="form-actions">
-              <button id="cost-submit" class="primary-button" type="submit">
-                Kosten opslaan
-              </button>
-              <button id="cost-cancel" class="ghost-button" type="button" hidden>
-                Annuleer
-              </button>
-            </div>
-          </form>
-
-          <p class="helper-text">
-            Wil je een kostenpost over meerdere projecten verdelen? Maak dan
-            meerdere regels met een deelbedrag.
-          </p>
-        </section>
-
-        <section class="panel">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Lijst</p>
-              <h2>Bestaande kostenregels</h2>
-            </div>
+            <details class="management-card" id="cost-panel">
+              <summary>Terugkerende kosten opvoeren</summary>
+              <form id="cost-form" class="stack-form">
+                <label>
+                  <span>Kostenregel</span>
+                  <input name="label" type="text" placeholder="Bijv. Canva" required />
+                </label>
+                <label>
+                  <span>Bedrag per maand</span>
+                  <input name="amount" type="number" step="0.01" required />
+                </label>
+                <label>
+                  <span>Valt onder</span>
+                  <select name="owner" required>
+                    <option value="karin">Karin</option>
+                    <option value="harmen">Harmen</option>
+                    <option value="shared">Gedeeld 50/50</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Koppel aan project</span>
+                  <select name="projectId" id="cost-project-select">
+                    <option value="">Algemene kosten</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Startmaand</span>
+                  <input name="startMonth" type="month" required />
+                </label>
+                <label>
+                  <span>Eindmaand</span>
+                  <input name="endMonth" type="month" />
+                </label>
+                <div class="form-actions">
+                  <button id="cost-submit" class="primary-button" type="submit">
+                    Kosten opslaan
+                  </button>
+                  <button id="cost-cancel" class="ghost-button" type="button" hidden>
+                    Annuleer
+                  </button>
+                </div>
+              </form>
+            </details>
           </div>
-
-          <div id="cost-list" class="entry-list"></div>
         </section>
       </main>
     </div>
