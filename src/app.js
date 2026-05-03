@@ -539,7 +539,7 @@ function renderOverview(db) {
             value: fmtCurrency(potentieel.total),
             tally: potentieel.tally,
             tone: 'danger',
-            href: '#/projecten?stages=potentieel',
+            href: '#/projecten?commercial=offerte_verzonden',
           })}
           ${stateTile({
             title: 'Toegezegd',
@@ -547,7 +547,7 @@ function renderOverview(db) {
             value: fmtCurrency(toegezegd.total),
             tally: toegezegd.tally,
             tone: 'warning',
-            href: '#/finance?type=income&payment=verwacht&year=2026',
+            href: '#/projecten?commercial=toegezegd',
           })}
           ${stateTile({
             title: 'Factuur verzonden',
@@ -555,7 +555,7 @@ function renderOverview(db) {
             value: fmtCurrency(gefactureerd.total),
             tally: gefactureerd.tally,
             tone: 'warning',
-            href: '#/finance?type=income&payment=gefactureerd&year=2026',
+            href: '#/projecten?commercial=gefactureerd',
           })}
           ${stateTile({
             title: 'Ontvangen',
@@ -563,7 +563,7 @@ function renderOverview(db) {
             value: fmtCurrency(ontvangen.total),
             tally: ontvangen.tally,
             tone: 'success',
-            href: '#/finance?type=income&payment=ontvangen&year=2026',
+            href: '#/projecten?commercial=ontvangen',
           })}
         </div>
       </section>
@@ -700,6 +700,33 @@ function renderProjectenList(db) {
   const labelFilter = urlFilters.label || '';
   if (labelFilter) projects = projects.filter((p) => p.service_label === labelFilter);
 
+  const commercial = urlFilters.commercial || '';
+  if (commercial) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const ys = todayStr.slice(0, 4) + '-01-01';
+    const ye = todayStr.slice(0, 4) + '-12-31';
+    const projWithFin = (status) => new Set(
+      db.finance.filter((f) =>
+        f.type === 'income' &&
+        f.payment_status === status &&
+        f.date >= ys && f.date <= ye &&
+        f.project_id
+      ).map((f) => f.project_id)
+    );
+    if (commercial === 'offerte_verzonden') {
+      projects = projects.filter((p) => POTENTIAL_STAGES.includes(p.pipeline_status));
+    } else if (commercial === 'toegezegd') {
+      const ids = projWithFin('verwacht');
+      projects = projects.filter((p) => COMMITTED_STAGES.includes(p.pipeline_status) && ids.has(p.id));
+    } else if (commercial === 'gefactureerd') {
+      const ids = projWithFin('gefactureerd');
+      projects = projects.filter((p) => ids.has(p.id));
+    } else if (commercial === 'ontvangen') {
+      const ids = projWithFin('ontvangen');
+      projects = projects.filter((p) => ids.has(p.id));
+    }
+  }
+
   let groups;
   if (groupBy === 'klant') {
     const byCustomer = new Map();
@@ -730,6 +757,10 @@ function renderProjectenList(db) {
   if (stagesGroup === 'potentieel')   activeFilters.push('Stage: potentieel (verkennen + 1e gesprek)');
   if (stagesGroup === 'toegezegd')    activeFilters.push('Stage: toegezegd (offerte → uitvoering)');
   if (labelFilter)                    activeFilters.push(`Label: ${SERVICE_LABELS.find((l) => l.value === labelFilter)?.label || labelFilter}`);
+  if (commercial === 'offerte_verzonden') activeFilters.push('Offerte verzonden (kan nog misgaan)');
+  if (commercial === 'toegezegd')         activeFilters.push('Toegezegd — wachten op factuur');
+  if (commercial === 'gefactureerd')      activeFilters.push('Factuur verzonden — wachten op betaling');
+  if (commercial === 'ontvangen')         activeFilters.push('Ontvangen');
 
   return `
     <section class="page-section">

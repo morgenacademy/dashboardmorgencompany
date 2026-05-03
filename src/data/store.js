@@ -35,6 +35,12 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
+function isAuthError(err) {
+  const msg = (err?.message || err?.code || '').toString().toLowerCase();
+  return err?.status === 401 || err?.code === 'PGRST301' ||
+         msg.includes('jwt') || msg.includes('401') || msg.includes('unauthorized') || msg.includes('expired');
+}
+
 export async function loadAll() {
   cache = { ...cache, loading: true, error: null };
   emit();
@@ -45,7 +51,7 @@ export async function loadAll() {
       supabase.from('projects').select('*').order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('finance_entries').select('*').order('date', { ascending: false }),
-    ]), 10000, 'loadAll');
+    ]), 6000, 'loadAll');
     const [customers, projects, tasks, finance] = result;
     const firstError = [customers, projects, tasks, finance].find((r) => r.error)?.error;
     if (firstError) throw firstError;
@@ -60,7 +66,13 @@ export async function loadAll() {
     console.log('[store] loadAll ok:', { c: cache.customers.length, p: cache.projects.length, t: cache.tasks.length, f: cache.finance.length });
   } catch (error) {
     console.error('[store] loadAll failed:', error);
-    cache = { ...cache, loading: false, error: error.message || String(error) };
+    if (isAuthError(error) || error.message?.includes('langer dan')) {
+      // Sessie is rot — direct uitloggen, dan force-redirect naar login
+      try { await supabase.auth.signOut(); } catch {}
+      cache = { ...cache, loading: false, error: 'Sessie verlopen — opnieuw inloggen.' };
+    } else {
+      cache = { ...cache, loading: false, error: error.message || String(error) };
+    }
   }
   emit();
 }

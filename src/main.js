@@ -12,10 +12,22 @@ async function boot() {
   try {
     const session = await Promise.race([
       getSession(),
-      new Promise((_, r) => setTimeout(() => r(new Error('getSession timeout 6s')), 6000)),
+      new Promise((_, r) => setTimeout(() => r(new Error('getSession timeout 4s')), 4000)),
     ]);
     authed = !!session;
     console.log('[boot] session check ok, authed =', authed);
+    // Als de access_token bijna/al verlopen is: proactief refresh om geen 401 op queries te krijgen.
+    if (authed && session?.expires_at) {
+      const expiresInSec = session.expires_at - Math.floor(Date.now() / 1000);
+      if (expiresInSec < 120) {
+        console.log('[boot] token bijna verlopen, refresh…');
+        const { data, error } = await supabase.auth.refreshSession();
+        if (error || !data.session) {
+          console.warn('[boot] refresh mislukt, opnieuw inloggen');
+          authed = false;
+        }
+      }
+    }
   } catch (err) {
     console.error('[boot] session check failed:', err);
     authed = false;
@@ -23,6 +35,8 @@ async function boot() {
   if (authed) {
     renderApp();
     await loadAll();
+    // Als loadAll een sessie-error gaf zal cache.error zijn gezet en supabase.auth.signOut() draaien
+    // → onAuthStateChange SIGNED_OUT triggert renderLogin
   } else {
     renderLogin(() => { bootRan = false; boot(); });
   }
