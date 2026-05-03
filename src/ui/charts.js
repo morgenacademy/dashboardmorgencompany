@@ -66,9 +66,11 @@ export function teamMonthlyChart({ months, series, currentMonth, ariaLabel = '' 
     const path = (pts) => pts.length > 1 ? pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') : '';
     const actualPath  = path(actualPts);
     const forecastPath = path(forecastPts);
+    const w = s.bold ? 3 : 1.6;
+    const wF = s.bold ? 2.4 : 1.4;
     return `
-      ${actualPath ? `<path d="${actualPath}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
-      ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${s.color}" stroke-width="1.6" stroke-dasharray="4 4" stroke-linecap="round" opacity="0.85"/>` : ''}
+      ${actualPath ? `<path d="${actualPath}" fill="none" stroke="${s.color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+      ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${s.color}" stroke-width="${wF}" stroke-dasharray="4 4" stroke-linecap="round" opacity="0.85"/>` : ''}
     `;
   }).join('');
 

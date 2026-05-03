@@ -277,6 +277,35 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
 .champ-tile--warning { box-shadow: inset 4px 0 0 var(--purple-light), var(--shadow); }
 .champ-tile--danger  { box-shadow: inset 4px 0 0 var(--tone-danger), var(--shadow); }
 
+/* Klikbare tile-varianten */
+a.champ-tile, a.label-tile, a.metric-card,
+.champ-tile--link, .label-tile, .metric-card--link {
+  text-decoration: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+a.champ-tile:hover, a.label-tile:hover, a.metric-card:hover,
+.champ-tile--link:hover, .label-tile:hover, .metric-card--link:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,.32);
+}
+
+/* Klikbare legend-knoppen */
+.legend-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: .74rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: var(--transition);
+}
+.legend-btn:hover { background: rgba(255,255,255,.06); color: var(--white); }
+.legend-btn--off { opacity: .35; text-decoration: line-through; }
+.legend-btn--off:hover { opacity: .6; }
+
 .champ-tile__head {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
 }
@@ -710,9 +739,6 @@ textarea { resize: vertical; min-height: 130px; }
 .chart-label { fill: var(--text-muted); font-size: 10px; font-family: 'Barlow', sans-serif; font-weight: 500; }
 .chart-axis  { fill: var(--text-secondary); font-size: 11px; font-family: 'Barlow', sans-serif; font-weight: 600; letter-spacing: .08em; }
 
-/* Lijngrafiek: lijn + dots in geel-groen (overrulet inline #2563eb) */
-.chart-svg path { stroke: var(--accent); }
-.chart-svg circle { fill: var(--accent); }
 /* Bar chart: paarse bars (overrulet inline #14b8a6) */
 .chart-svg rect { fill: var(--purple-light); }
 

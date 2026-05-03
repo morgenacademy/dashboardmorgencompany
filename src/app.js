@@ -125,15 +125,23 @@ function dueTone(dateStr) {
   return 'info';
 }
 
-const appState = { route: '/', filters: {} };
+const appState = { route: '/', filters: {}, chartHidden: new Set() };
 
 subscribe(() => renderApp());
 
 function parseRoute() {
   const hash = window.location.hash.replace(/^#/, '') || '/';
-  const [path] = hash.split('?');
+  const [path, queryString = ''] = hash.split('?');
   const parts = path.split('/').filter(Boolean);
-  return { path, parts };
+  const query = {};
+  if (queryString) {
+    for (const pair of queryString.split('&')) {
+      if (!pair) continue;
+      const [k, v = ''] = pair.split('=');
+      query[decodeURIComponent(k)] = decodeURIComponent(v);
+    }
+  }
+  return { path, parts, query };
 }
 
 // ============== Components ==============
@@ -150,11 +158,13 @@ function badge(text, tone = 'default') {
   return `<span class="badge badge-${tone}">${escapeHtml(text)}</span>`;
 }
 
-function goalTile({ title, doel, value, pct, description }) {
+function goalTile({ title, doel, value, pct, description, href = '' }) {
   const status = statusFromProgress(pct);
   const cappedPct = Math.max(0, Math.min(1, pct));
+  const Tag = href ? 'a' : 'article';
+  const attrs = href ? `href="${href}"` : '';
   return `
-    <article class="champ-tile champ-tile--${status}">
+    <${Tag} class="champ-tile champ-tile--${status} ${href ? 'champ-tile--link' : ''}" ${attrs}>
       <header class="champ-tile__head">
         <div>
           <h3>${escapeHtml(title)}</h3>
@@ -165,16 +175,18 @@ function goalTile({ title, doel, value, pct, description }) {
       <strong class="champ-tile__value">${value}</strong>
       <div class="progress-bar"><span style="width:${(cappedPct * 100).toFixed(1)}%"></span></div>
       <p class="champ-tile__note">${escapeHtml(description)}</p>
-    </article>`;
+    </${Tag}>`;
 }
 
-function stateTile({ title, count, value, tally, tone }) {
+function stateTile({ title, count, value, tally, tone, href = '' }) {
   const parts = [];
   for (const [name, amount] of Object.entries(tally)) {
     if (amount > 0) parts.push(`${escapeHtml(name)}: ${fmtCurrency(amount)}`);
   }
+  const Tag = href ? 'a' : 'article';
+  const attrs = href ? `href="${href}"` : '';
   return `
-    <article class="champ-tile champ-tile--${tone} champ-tile--state">
+    <${Tag} class="champ-tile champ-tile--${tone} champ-tile--state ${href ? 'champ-tile--link' : ''}" ${attrs}>
       <header class="champ-tile__head">
         <div>
           <h3>${escapeHtml(title)}</h3>
@@ -183,7 +195,54 @@ function stateTile({ title, count, value, tally, tone }) {
         <strong class="champ-tile__amount">${value}</strong>
       </header>
       <p class="champ-tile__note">${parts.length ? parts.join(' · ') : '—'}</p>
-    </article>`;
+    </${Tag}>`;
+}
+
+function icsDate(dateStr) {
+  const d = new Date(dateStr);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+}
+
+function icsEscape(s = '') {
+  return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+
+function buildIcs(task, project, customer) {
+  const start = new Date(task.meeting_at);
+  const end = new Date(start.getTime() + (task.meeting_duration_minutes || 60) * 60000);
+  const summary = `${task.title}${customer ? ` · ${customer.name}` : ''}`;
+  const desc = [task.description, project ? `Project: ${project.name}` : '', customer ? `Klant: ${customer.name}` : '']
+    .filter(Boolean).join('\n');
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Morgen Dashboard//NL',
+    'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    `UID:${task.id}@morgendashboard`,
+    `DTSTAMP:${icsDate(new Date().toISOString())}`,
+    `DTSTART:${icsDate(task.meeting_at)}`,
+    `DTEND:${icsDate(end.toISOString())}`,
+    `SUMMARY:${icsEscape(summary)}`,
+    desc ? `DESCRIPTION:${icsEscape(desc)}` : '',
+    task.location ? `LOCATION:${icsEscape(task.location)}` : '',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
+}
+
+function downloadIcs(task, project, customer) {
+  const ics = buildIcs(task, project, customer);
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${task.id}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function projectValueCell(p) {
@@ -380,12 +439,30 @@ function renderOverview(db) {
     }
   }
 
+  // Totaal netto per maand = (Karin + Harmen opbrengst) − (Karin + Harmen kosten)
+  for (const m of months) {
+    m.totalRevenue = (m.karinRevenue || 0) + (m.harmenRevenue || 0);
+    m.totalCosts   = (m.karinCosts || 0) + (m.harmenCosts || 0);
+    m.totalNet     = m.totalRevenue - m.totalCosts;
+  }
+
   const teamSeries = [
-    { key: 'karinRevenue',  label: 'Karin opbrengst',  color: '#1F6F5F' },
-    { key: 'karinCosts',    label: 'Karin kosten',     color: '#7BA6A1' },
-    { key: 'harmenRevenue', label: 'Harmen opbrengst', color: '#D8FE56' },
-    { key: 'harmenCosts',   label: 'Harmen kosten',    color: '#9B6FCF' },
+    { key: 'totalNet',      label: 'Totaal netto',     color: '#D8FE56', bold: true },
+    { key: 'totalRevenue',  label: 'Totaal opbrengst', color: '#FFFFFF' },
+    { key: 'totalCosts',    label: 'Totaal kosten',    color: '#FF8FB6' },
+    { key: 'karinRevenue',  label: 'Karin opbrengst',  color: '#5BC0A8' },
+    { key: 'karinCosts',    label: 'Karin kosten',     color: '#3A7E70' },
+    { key: 'harmenRevenue', label: 'Harmen opbrengst', color: '#9B6FCF' },
+    { key: 'harmenCosts',   label: 'Harmen kosten',    color: '#5B2D8E' },
   ];
+
+  // Lijnen die default uitstaan (om grafiek niet te druk te maken)
+  const DEFAULT_HIDDEN = new Set(['karinRevenue','karinCosts','harmenRevenue','harmenCosts']);
+  if (!appState._chartInited) {
+    appState._chartInited = true;
+    for (const k of DEFAULT_HIDDEN) appState.chartHidden.add(k);
+  }
+  const visibleSeries = teamSeries.filter((s) => !appState.chartHidden.has(s.key));
 
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
 
@@ -426,6 +503,7 @@ function renderOverview(db) {
             value: `${externalLeads.length} / ${GOALS_2026.external_leads}`,
             pct: goalLeadsPct,
             description: 'Leads via vakblad, events, partij of een onverwachte externe ingang.',
+            href: '#/projecten?lead_source=buiten_netwerk',
           })}
           ${goalTile({
             title: 'Holy shit moment',
@@ -433,6 +511,7 @@ function renderOverview(db) {
             value: breakthroughs.length ? `${breakthroughs.length} ✨` : 'Nog niet',
             pct: goalBreakPct,
             description: 'Nieuwe zichtbaarheid of tractie buiten het directe netwerk.',
+            href: '#/projecten?breakthrough=1',
           })}
           ${goalTile({
             title: 'Omzet 2026',
@@ -440,6 +519,7 @@ function renderOverview(db) {
             value: fmtCurrency(omzetGefactureerd),
             pct: goalRevenuePct,
             description: 'Berekend uit toegezegde en gefactureerde omzet binnen het gekozen jaar.',
+            href: '#/finance?type=income&payment=gefactureerd_ontvangen&year=2026',
           })}
         </div>
 
@@ -450,6 +530,7 @@ function renderOverview(db) {
             value: fmtCurrency(potentieel.total),
             tally: potentieel.tally,
             tone: 'warning',
+            href: '#/projecten?stages=potentieel',
           })}
           ${stateTile({
             title: 'Toegezegd in 2026',
@@ -457,6 +538,7 @@ function renderOverview(db) {
             value: fmtCurrency(toegezegd.total),
             tally: toegezegd.tally,
             tone: 'warning',
+            href: '#/projecten?stages=toegezegd',
           })}
           ${stateTile({
             title: 'Gefactureerd in 2026',
@@ -464,6 +546,7 @@ function renderOverview(db) {
             value: fmtCurrency(gefactureerd.total),
             tally: gefactureerd.tally,
             tone: 'success',
+            href: '#/finance?type=income&payment=gefactureerd_ontvangen&year=2026',
           })}
         </div>
       </section>
@@ -477,7 +560,7 @@ function renderOverview(db) {
           ${labelTiles.map((l) => {
             const pct = labelGrandTotal ? l.total / labelGrandTotal : 0;
             return `
-              <article class="label-tile label-tile--${l.value}">
+              <a class="label-tile label-tile--${l.value}" href="#/projecten?label=${escapeHtml(l.value)}">
                 <header>
                   <h3>${escapeHtml(l.label)}</h3>
                   <span class="label-tile__pct">${(pct * 100).toFixed(0)}%</span>
@@ -485,7 +568,7 @@ function renderOverview(db) {
                 <strong>${fmtCurrency(l.total)}</strong>
                 <div class="progress-bar"><span style="width:${(pct * 100).toFixed(1)}%"></span></div>
                 <p class="muted" style="margin:0;font-size:.75rem;">${l.count} project${l.count === 1 ? '' : 'en'}</p>
-              </article>`;
+              </a>`;
           }).join('')}
         </div>
       </section>
@@ -498,11 +581,16 @@ function renderOverview(db) {
             <span class="muted" style="font-size:.78rem;">Solide tot vandaag, stippellijn = forecast</span>
           </div>
           <div class="chart-legend">
-            ${teamSeries.map((s) => `<span><span class="legend-dot" style="background:${s.color}"></span>${escapeHtml(s.label)}</span>`).join('')}
+            ${teamSeries.map((s) => {
+              const off = appState.chartHidden.has(s.key);
+              return `<button type="button" class="legend-btn ${off ? 'legend-btn--off' : ''}" data-action="toggle-series" data-key="${escapeHtml(s.key)}">
+                <span class="legend-dot" style="background:${s.color};${s.bold ? 'height:4px;' : ''}"></span>${escapeHtml(s.label)}
+              </button>`;
+            }).join('')}
             <span class="muted">${activeProjects.length} actief · ${openTasks.length} open${overdueTasks.length ? ` · <span style="color:#FF8FB6;">${overdueTasks.length} te laat</span>` : ''} · expense YTD ${fmtCurrency(expenseYtd)}</span>
           </div>
         </div>
-        ${teamMonthlyChart({ months, series: teamSeries, currentMonth: todayMonth, ariaLabel: 'Opbrengst en kosten per persoon per maand 2026' })}
+        ${teamMonthlyChart({ months, series: visibleSeries, currentMonth: todayMonth, ariaLabel: 'Opbrengst en kosten per persoon per maand 2026' })}
       </section>
 
       <div class="layout-two">
@@ -576,13 +664,24 @@ function projectRow(p, customer, db) {
 }
 
 function renderProjectenList(db) {
+  const route = parseRoute();
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const urlFilters = route.query || {};
   const filterStatus = appState.filters.pipeline_status || '';
   const filterType = appState.filters.product_type || '';
   const groupBy = appState.filters.group_by || 'status';
+  const leadSource = urlFilters.lead_source || '';
+  const breakthrough = urlFilters.breakthrough === '1';
+  const stagesGroup = urlFilters.stages || '';
   let projects = db.projects;
   if (filterStatus) projects = projects.filter((p) => p.pipeline_status === filterStatus);
   if (filterType) projects = projects.filter((p) => p.product_type === filterType);
+  if (leadSource) projects = projects.filter((p) => p.lead_source === leadSource);
+  if (breakthrough) projects = projects.filter((p) => p.is_breakthrough);
+  if (stagesGroup === 'potentieel') projects = projects.filter((p) => POTENTIAL_STAGES.includes(p.pipeline_status));
+  if (stagesGroup === 'toegezegd')  projects = projects.filter((p) => COMMITTED_STAGES.includes(p.pipeline_status));
+  const labelFilter = urlFilters.label || '';
+  if (labelFilter) projects = projects.filter((p) => p.service_label === labelFilter);
 
   let groups;
   if (groupBy === 'klant') {
@@ -608,12 +707,20 @@ function renderProjectenList(db) {
   const totalForecast = projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
   const totalActual = projects.reduce((s, p) => s + Number(p.actual_amount || 0), 0);
 
+  const activeFilters = [];
+  if (leadSource === 'buiten_netwerk') activeFilters.push('Lead buiten netwerk');
+  if (breakthrough) activeFilters.push('Holy shit moment ✨');
+  if (stagesGroup === 'potentieel')   activeFilters.push('Stage: potentieel (verkennen + 1e gesprek)');
+  if (stagesGroup === 'toegezegd')    activeFilters.push('Stage: toegezegd (offerte → uitvoering)');
+  if (labelFilter)                    activeFilters.push(`Label: ${SERVICE_LABELS.find((l) => l.value === labelFilter)?.label || labelFilter}`);
+
   return `
     <section class="page-section">
       <div class="section-header">
         <div>
           <h1>Projecten</h1>
           <p>${projects.length} projecten · werkelijk ${fmtCurrency(totalActual)} · forecast ${fmtCurrency(totalForecast)}</p>
+          ${activeFilters.length ? `<p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${activeFilters.map((f) => `<span class="badge badge-info">${escapeHtml(f)}</span>`).join('')} <a href="#/projecten" class="muted" style="font-size:.82rem;">Filters wissen</a></p>` : ''}
         </div>
         <a href="#/projecten/nieuw" class="button primary">+ Nieuw project</a>
       </div>
@@ -740,15 +847,20 @@ function renderProjectDetail(db, projectId) {
   const finance = db.finance.filter((f) => f.project_id === projectId);
   const incomeTotal = finance.filter((f) => f.type === 'income').reduce((s, f) => s + Number(f.amount), 0);
 
-  const taskRow = (t) => [
-    `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" ${t.status === 'done' ? 'checked' : ''} />`,
-    `<strong style="${t.status === 'done' ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted">${escapeHtml(t.description)}</div>` : ''}`,
-    badge(TASK_STATUSES.find((s) => s.value === t.status)?.label || t.status, t.status === 'done' ? 'success' : t.status === 'blocked' ? 'danger' : t.status === 'in_progress' ? 'warning' : 'info'),
-    t.due_date ? badge(dueLabel(t.due_date), dueTone(t.due_date)) : '<span class="muted">—</span>',
-    badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
-    escapeHtml(t.owner || ''),
-    `<button type="button" class="button ghost" data-action="delete-task" data-task-id="${escapeHtml(t.id)}">×</button>`,
-  ];
+  const taskRow = (t) => {
+    const meetingInfo = t.meeting_at
+      ? `<div class="muted" style="margin-top:4px;display:flex;gap:8px;align-items:center;">📅 ${escapeHtml(new Date(t.meeting_at).toLocaleString('nl-NL', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))}${t.location ? ` · ${escapeHtml(t.location)}` : ''}<button type="button" class="legend-btn" data-action="download-ics" data-task-id="${escapeHtml(t.id)}" style="font-size:.7rem;">⬇ .ics</button></div>`
+      : '';
+    return [
+      `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" ${t.status === 'done' ? 'checked' : ''} />`,
+      `<strong style="${t.status === 'done' ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted">${escapeHtml(t.description)}</div>` : ''}${meetingInfo}`,
+      badge(TASK_STATUSES.find((s) => s.value === t.status)?.label || t.status, t.status === 'done' ? 'success' : t.status === 'blocked' ? 'danger' : t.status === 'in_progress' ? 'warning' : 'info'),
+      t.due_date ? badge(dueLabel(t.due_date), dueTone(t.due_date)) : '<span class="muted">—</span>',
+      badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
+      escapeHtml(t.owner || ''),
+      `<button type="button" class="button ghost" data-action="delete-task" data-task-id="${escapeHtml(t.id)}">×</button>`,
+    ];
+  };
 
   return `
     <section class="page-section">
@@ -841,17 +953,32 @@ function renderTaken(db) {
 }
 
 function renderFinance(db) {
-  const incomes = db.finance.filter((f) => f.type === 'income');
-  const expenses = db.finance.filter((f) => f.type === 'expense');
+  const route = parseRoute();
+  const q = route.query || {};
+  const filterType    = q.type || '';
+  const filterPayment = q.payment || '';
+  const filterYear    = q.year || '';
+
+  let entries = db.finance;
+  if (filterType) entries = entries.filter((f) => f.type === filterType);
+  if (filterYear) entries = entries.filter((f) => (f.date || '').slice(0, 4) === filterYear);
+  if (filterPayment === 'gefactureerd_ontvangen') {
+    entries = entries.filter((f) => ['gefactureerd','ontvangen'].includes(f.payment_status));
+  } else if (filterPayment) {
+    entries = entries.filter((f) => f.payment_status === filterPayment);
+  }
+
+  const incomes = entries.filter((f) => f.type === 'income');
+  const expenses = entries.filter((f) => f.type === 'expense');
   const incomeTotal = incomes.reduce((s, f) => s + Number(f.amount), 0);
   const expenseTotal = expenses.reduce((s, f) => s + Number(f.amount), 0);
   const ontvangen = incomes.filter((f) => f.payment_status === 'ontvangen').reduce((s, f) => s + Number(f.amount), 0);
   const gefactureerd = incomes.filter((f) => f.payment_status === 'gefactureerd').reduce((s, f) => s + Number(f.amount), 0);
   const verwacht = incomes.filter((f) => f.payment_status === 'verwacht').reduce((s, f) => s + Number(f.amount), 0);
 
-  // Per maand Q1 2026 expenses
+  // Per maand
   const byMonth = {};
-  for (const f of db.finance) {
+  for (const f of entries) {
     if (!f.date || f.date < '2026-01-01' || f.date > '2026-12-31') continue;
     const m = f.date.slice(0, 7);
     byMonth[m] ||= { month: m, income: 0, expense: 0 };
@@ -872,16 +999,36 @@ function renderFinance(db) {
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
   const projectsById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
 
+  const activeFilters = [];
+  if (filterType === 'income')  activeFilters.push('Type: Income');
+  if (filterType === 'expense') activeFilters.push('Type: Expense');
+  if (filterPayment === 'gefactureerd_ontvangen') activeFilters.push('Status: gefactureerd + ontvangen');
+  else if (filterPayment) activeFilters.push(`Status: ${filterPayment}`);
+  if (filterYear) activeFilters.push(`Jaar: ${filterYear}`);
+
+  const linkTile = (label, value, meta, tone, href) =>
+    `<a class="metric-card metric-${tone} metric-card--link" href="${href}">
+       <span class="metric-label">${escapeHtml(label)}</span>
+       <strong class="metric-value">${value}</strong>
+       <span class="metric-meta">${escapeHtml(meta)}</span>
+     </a>`;
+
   return `
     <section class="page-section">
-      <div class="section-header"><div><h1>Finance</h1><p>Income + expenses, gekoppeld aan projecten waar mogelijk.</p></div></div>
+      <div class="section-header">
+        <div>
+          <h1>Finance</h1>
+          <p>Income + expenses, gekoppeld aan projecten waar mogelijk.</p>
+          ${activeFilters.length ? `<p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${activeFilters.map((f) => `<span class="badge badge-info">${escapeHtml(f)}</span>`).join('')} <a href="#/finance" class="muted" style="font-size:.82rem;">Filters wissen</a></p>` : ''}
+        </div>
+      </div>
 
       <div class="metric-grid">
-        ${metricCard('Ontvangen', fmtCurrency(ontvangen), 'income met status ontvangen', 'success')}
-        ${metricCard('Gefactureerd', fmtCurrency(gefactureerd), 'wacht op betaling', 'warning')}
-        ${metricCard('Verwacht', fmtCurrency(verwacht), 'forecast / nog te factureren', 'default')}
-        ${metricCard('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`, 'warning')}
-        ${metricCard('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger')}
+        ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', '#/finance?type=income&payment=ontvangen')}
+        ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', '#/finance?type=income&payment=gefactureerd')}
+        ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', '#/finance?type=income&payment=verwacht')}
+        ${linkTile('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`,    'warning', '#/finance?type=expense')}
+        ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', '#/finance')}
       </div>
 
       <div class="layout-two">
@@ -1054,6 +1201,27 @@ function attachEvents() {
 
   document.querySelector('[data-action="logout"]')?.addEventListener('click', () => logout());
 
+  document.querySelectorAll('[data-action="download-ics"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.dataset.taskId;
+      const db = getDatabase();
+      const task = db.tasks.find((t) => t.id === id);
+      if (!task) return;
+      const project = db.projects.find((p) => p.id === task.project_id);
+      const customer = project ? db.customers.find((c) => c.id === project.customer_id) : null;
+      downloadIcs(task, project, customer);
+    });
+  });
+
+  document.querySelectorAll('[data-action="toggle-series"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const key = e.currentTarget.dataset.key;
+      if (appState.chartHidden.has(key)) appState.chartHidden.delete(key);
+      else appState.chartHidden.add(key);
+      renderApp();
+    });
+  });
+
   document.querySelector('[data-action="delete-project"]')?.addEventListener('click', async (e) => {
     const id = e.currentTarget.dataset.id;
     const name = e.currentTarget.dataset.name;
@@ -1090,6 +1258,20 @@ function attachEvents() {
     if (!title) return;
     const due = prompt('Deadline (YYYY-MM-DD, leeg = geen)?', '');
     const priority = prompt('Prio (high/medium/low)?', 'medium');
+    const isAfspraak = confirm('Is dit een afspraak/meeting? OK = ja → datum, tijd en locatie.');
+    let meeting_at = null;
+    let location = '';
+    let meeting_duration_minutes = 60;
+    if (isAfspraak) {
+      const dt = prompt('Datum + tijd (YYYY-MM-DD HH:MM, lokale tijd Amsterdam)?', due ? `${due} 10:00` : '');
+      if (dt && /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(dt.trim())) {
+        // Bouw een ISO-string met +02:00 (zomer NL). Voor andere tijden mag user later in DB tweaken.
+        meeting_at = new Date(dt.replace(' ', 'T') + ':00+02:00').toISOString();
+      }
+      location = prompt('Locatie?', '') || '';
+      const dur = prompt('Duur in minuten?', '60');
+      meeting_duration_minutes = Number(dur) || 60;
+    }
     await upsertTask({
       id: nextId('tsk'),
       project_id: projectId,
@@ -1099,6 +1281,9 @@ function attachEvents() {
       priority: ['high','medium','low'].includes(priority) ? priority : 'medium',
       due_date: due || null,
       owner: 'Harmen',
+      meeting_at,
+      location,
+      meeting_duration_minutes,
     });
   });
 
