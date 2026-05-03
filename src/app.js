@@ -152,7 +152,6 @@ function badge(text, tone = 'default') {
 
 function goalTile({ title, doel, value, pct, description }) {
   const status = statusFromProgress(pct);
-  const statusLabel = status === 'success' ? 'Green' : status === 'warning' ? 'Amber' : 'Red';
   const cappedPct = Math.max(0, Math.min(1, pct));
   return `
     <article class="champ-tile champ-tile--${status}">
@@ -161,7 +160,7 @@ function goalTile({ title, doel, value, pct, description }) {
           <h3>${escapeHtml(title)}</h3>
           <span class="muted">Doel: ${escapeHtml(doel)}</span>
         </div>
-        <span class="status-pill status-pill--${status}">${statusLabel}</span>
+        <span class="status-dot status-dot--${status}" aria-label="status ${status}"></span>
       </header>
       <strong class="champ-tile__value">${value}</strong>
       <div class="progress-bar"><span style="width:${(cappedPct * 100).toFixed(1)}%"></span></div>
@@ -175,14 +174,14 @@ function stateTile({ title, count, value, tally, tone }) {
     if (amount > 0) parts.push(`${escapeHtml(name)}: ${fmtCurrency(amount)}`);
   }
   return `
-    <article class="champ-tile champ-tile--${tone}">
+    <article class="champ-tile champ-tile--${tone} champ-tile--state">
       <header class="champ-tile__head">
         <div>
           <h3>${escapeHtml(title)}</h3>
           <span class="muted">${escapeHtml(count)}</span>
         </div>
+        <strong class="champ-tile__amount">${value}</strong>
       </header>
-      <strong class="champ-tile__value">${value}</strong>
       <p class="champ-tile__note">${parts.length ? parts.join(' · ') : '—'}</p>
     </article>`;
 }

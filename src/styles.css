@@ -283,20 +283,21 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
 .champ-tile__head h3 {
   margin: 0;
   font-family: 'Barlow', sans-serif;
-  font-weight: 800;
-  font-size: 1rem;
+  font-weight: 900;
+  font-size: 1.15rem;
   color: var(--white);
   line-height: 1.2;
+  letter-spacing: .005em;
 }
 .champ-tile__head .muted { font-size: .78rem; }
 .champ-tile__value {
   font-family: 'Barlow', sans-serif;
-  font-weight: 900;
-  font-size: clamp(1.6rem, 2.4vw, 2.1rem);
-  color: var(--white);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-primary);
   letter-spacing: 0;
-  line-height: 1;
-  margin-top: 2px;
+  line-height: 1.2;
+  margin: 0;
 }
 .champ-tile__note {
   margin: 0;
@@ -304,20 +305,26 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
   font-size: .78rem;
   line-height: 1.5;
 }
-
-.status-pill {
-  display: inline-flex; align-items: center;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: .7rem;
-  font-weight: 700;
-  letter-spacing: .04em;
-  border: 1px solid;
+.champ-tile__amount {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 800;
+  font-size: 1.4rem;
+  color: var(--white);
   white-space: nowrap;
+  line-height: 1;
 }
-.status-pill--success { background: rgba(216,254,86,.16); border-color: rgba(216,254,86,.45); color: var(--accent); }
-.status-pill--warning { background: rgba(155,111,207,.20); border-color: rgba(155,111,207,.5);  color: var(--purple-light); }
-.status-pill--danger  { background: rgba(194,80,128,.18); border-color: rgba(194,80,128,.5);  color: #FF8FB6; }
+.champ-tile--state .champ-tile__head { align-items: center; }
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.04);
+}
+.status-dot--success { background: var(--accent);        box-shadow: 0 0 12px rgba(216,254,86,.55), 0 0 0 3px rgba(216,254,86,.10); }
+.status-dot--warning { background: var(--purple-light);  box-shadow: 0 0 12px rgba(155,111,207,.5),  0 0 0 3px rgba(155,111,207,.12); }
+.status-dot--danger  { background: #FF8FB6;              box-shadow: 0 0 12px rgba(255,143,182,.5),  0 0 0 3px rgba(255,143,182,.12); }
 
 .progress-bar {
   height: 6px;
