@@ -21,10 +21,20 @@ async function boot() {
       const expiresInSec = session.expires_at - Math.floor(Date.now() / 1000);
       if (expiresInSec < 120) {
         console.log('[boot] token bijna verlopen, refresh…');
-        const { data, error } = await supabase.auth.refreshSession();
-        if (error || !data.session) {
-          console.warn('[boot] refresh mislukt, opnieuw inloggen');
+        try {
+          const result = await Promise.race([
+            supabase.auth.refreshSession(),
+            new Promise((_, r) => setTimeout(() => r(new Error('refreshSession timeout 3s')), 3000)),
+          ]);
+          if (result.error || !result.data?.session) {
+            console.warn('[boot] refresh mislukt — hard reset');
+            authed = false;
+            try { Object.keys(localStorage).forEach((k) => { if (k.startsWith('sb-')) localStorage.removeItem(k); }); } catch {}
+          }
+        } catch (e) {
+          console.warn('[boot] refresh timeout — hard reset');
           authed = false;
+          try { Object.keys(localStorage).forEach((k) => { if (k.startsWith('sb-')) localStorage.removeItem(k); }); } catch {}
         }
       }
     }

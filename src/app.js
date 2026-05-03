@@ -1024,16 +1024,44 @@ function renderFinance(db) {
   const gefactureerd = incomes.filter((f) => f.payment_status === 'gefactureerd').reduce((s, f) => s + Number(f.amount), 0);
   const verwacht = incomes.filter((f) => f.payment_status === 'verwacht').reduce((s, f) => s + Number(f.amount), 0);
 
-  // Per maand
-  const byMonth = {};
-  for (const f of entries) {
-    if (!f.date || f.date < '2026-01-01' || f.date > '2026-12-31') continue;
-    const m = f.date.slice(0, 7);
-    byMonth[m] ||= { month: m, income: 0, expense: 0 };
-    byMonth[m][f.type] += Number(f.amount);
+  // ===== Finance per maand: income (gefactureerd+ontvangen) + expense + netto =====
+  const yearForChart = filterYear || new Date().getFullYear().toString();
+  const ys = `${yearForChart}-01-01`;
+  const ye = `${yearForChart}-12-31`;
+  const months = [];
+  for (let mi = 0; mi < 12; mi++) {
+    const d = new Date(Number(yearForChart), mi, 1);
+    months.push({
+      month: d.toISOString().slice(0, 7),
+      label: d.toLocaleDateString('nl-NL', { month: 'short' }),
+      income: 0, expense: 0, net: 0,
+    });
   }
-  const monthSeries = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month))
-    .map((m) => ({ label: m.month.slice(5), income: m.income, expense: m.expense }));
+  const monthsByKey = Object.fromEntries(months.map((m) => [m.month, m]));
+  for (const f of db.finance) {
+    if (!f.date || f.date < ys || f.date > ye) continue;
+    const amount = Number(f.amount || 0);
+    if (!amount) continue;
+    if (f.recurring === 'monthly') {
+      const fromIdx = Math.max(0, months.findIndex((m) => m.month >= f.date.slice(0, 7)));
+      for (let i = fromIdx; i < months.length; i++) {
+        if (f.type === 'income' && ['gefactureerd','ontvangen'].includes(f.payment_status)) months[i].income += amount;
+        else if (f.type === 'expense') months[i].expense += amount;
+      }
+    } else {
+      const m = monthsByKey[f.date.slice(0, 7)];
+      if (!m) continue;
+      if (f.type === 'income' && ['gefactureerd','ontvangen'].includes(f.payment_status)) m.income += amount;
+      else if (f.type === 'expense') m.expense += amount;
+    }
+  }
+  for (const m of months) m.net = m.income - m.expense;
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const financeSeries = [
+    { key: 'net',     label: 'Netto',    color: '#D8FE56', bold: true },
+    { key: 'income',  label: 'Inkomsten', color: '#FFFFFF' },
+    { key: 'expense', label: 'Uitgaven',  color: '#FF8FB6' },
+  ];
 
   // Per categorie expenses
   const byCat = {};
@@ -1079,21 +1107,28 @@ function renderFinance(db) {
         ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', '#/finance')}
       </div>
 
-      <div class="layout-two">
-        <section class="panel">
-          <div class="panel-heading"><div><h2>2026 per maand</h2></div></div>
-          ${barChart(monthSeries, 'expense', '#9B6FCF', fmtCurrency)}
-          <p class="muted">Expense per maand (paars). Income volgt zodra abbo's en facturen geboekt zijn.</p>
-        </section>
-        <section class="panel">
-          <div class="panel-heading"><div><h2>Expenses per categorie</h2></div></div>
-          ${table(
-            ['Categorie','Bedrag'],
-            catSeries.map((c) => [escapeHtml(c.label), fmtCurrency(c.value)]),
-            { compact: true },
-          )}
-        </section>
-      </div>
+      <section class="panel forecast-panel">
+        <div class="forecast-panel__head">
+          <div>
+            <span class="metric-label">Inkomsten · Uitgaven · Netto</span>
+            <h3 style="margin:0;font-family:'Barlow';font-weight:900;color:var(--white);font-size:1.2rem;">${escapeHtml(yearForChart)} — per maand</h3>
+            <span class="muted" style="font-size:.78rem;">Inkomsten: gefactureerd + ontvangen. Recurring kosten gespreid over jaar.</span>
+          </div>
+          <div class="chart-legend">
+            ${financeSeries.map((s) => `<span><span class="legend-dot" style="background:${s.color};${s.bold ? 'height:4px;' : ''}"></span>${escapeHtml(s.label)}</span>`).join('')}
+          </div>
+        </div>
+        ${teamMonthlyChart({ months, series: financeSeries, currentMonth: todayMonth, ariaLabel: `Inkomsten en uitgaven per maand ${yearForChart}` })}
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading"><div><h2>Expenses per categorie</h2></div></div>
+        ${table(
+          ['Categorie','Bedrag'],
+          catSeries.map((c) => [escapeHtml(c.label), fmtCurrency(c.value)]),
+          { compact: true },
+        )}
+      </section>
 
       <section class="panel">
         <div class="panel-heading"><div><h2>Alle regels</h2><p>${db.finance.length} totaal</p></div></div>

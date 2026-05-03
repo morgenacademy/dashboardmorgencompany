@@ -41,6 +41,15 @@ function isAuthError(err) {
          msg.includes('jwt') || msg.includes('401') || msg.includes('unauthorized') || msg.includes('expired');
 }
 
+function nukeStaleTokensAndReload() {
+  try {
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith('sb-')) localStorage.removeItem(k);
+    });
+  } catch {}
+  window.location.reload();
+}
+
 export async function loadAll() {
   cache = { ...cache, loading: true, error: null };
   emit();
@@ -67,12 +76,11 @@ export async function loadAll() {
   } catch (error) {
     console.error('[store] loadAll failed:', error);
     if (isAuthError(error) || error.message?.includes('langer dan')) {
-      // Sessie is rot — direct uitloggen, dan force-redirect naar login
-      try { await supabase.auth.signOut(); } catch {}
-      cache = { ...cache, loading: false, error: 'Sessie verlopen — opnieuw inloggen.' };
-    } else {
-      cache = { ...cache, loading: false, error: error.message || String(error) };
+      // Sessie is rot — direct hard reset (signOut zelf kan ook hangen op rotte tokens)
+      nukeStaleTokensAndReload();
+      return;
     }
+    cache = { ...cache, loading: false, error: error.message || String(error) };
   }
   emit();
 }
