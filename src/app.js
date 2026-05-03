@@ -129,8 +129,6 @@ const appState = { route: '/', filters: {} };
 
 subscribe(() => renderApp());
 
-window.addEventListener('hashchange', () => renderApp());
-
 function parseRoute() {
   const hash = window.location.hash.replace(/^#/, '') || '/';
   const [path] = hash.split('?');

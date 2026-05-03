@@ -21,7 +21,6 @@ export function getDatabase() {
 
 export function subscribe(listener) {
   listeners.add(listener);
-  listener(cache);
   return () => listeners.delete(listener);
 }
 
