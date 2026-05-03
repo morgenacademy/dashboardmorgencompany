@@ -29,16 +29,25 @@ function emit() {
   listeners.forEach((listener) => listener(cache));
 }
 
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} duurt langer dan ${ms / 1000}s — geen antwoord van Supabase`)), ms)),
+  ]);
+}
+
 export async function loadAll() {
   cache = { ...cache, loading: true, error: null };
   emit();
+  console.log('[store] loadAll starting…');
   try {
-    const [customers, projects, tasks, finance] = await Promise.all([
+    const result = await withTimeout(Promise.all([
       supabase.from('customers').select('*').order('name'),
       supabase.from('projects').select('*').order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('finance_entries').select('*').order('date', { ascending: false }),
-    ]);
+    ]), 10000, 'loadAll');
+    const [customers, projects, tasks, finance] = result;
     const firstError = [customers, projects, tasks, finance].find((r) => r.error)?.error;
     if (firstError) throw firstError;
     cache = {
@@ -49,7 +58,9 @@ export async function loadAll() {
       loading: false,
       error: null,
     };
+    console.log('[store] loadAll ok:', { c: cache.customers.length, p: cache.projects.length, t: cache.tasks.length, f: cache.finance.length });
   } catch (error) {
+    console.error('[store] loadAll failed:', error);
     cache = { ...cache, loading: false, error: error.message || String(error) };
   }
   emit();
