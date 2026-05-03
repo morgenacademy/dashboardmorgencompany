@@ -56,7 +56,7 @@ const GOALS_2026 = {
 };
 
 const ACCEPTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
-const INTERNAL_HOURLY_RATE = 80;
+const INTERNAL_HOURLY_RATE = 100;
 // Potentieel = nog niet zeker (lead → offerte verzonden)
 const POTENTIAL_STAGES = ['verkennen','1e_gesprek','offerte_verzonden'];
 // Toegezegd = klant heeft ja gezegd, werk gaat gebeuren / loopt / is af
@@ -658,6 +658,13 @@ function projectRow(p, customer, db) {
   const forecast = Number(p.forecast_amount || 0);
   const typeLabel = PRODUCT_TYPES.find((t) => t.value === p.product_type)?.label || p.product_type;
   const prioLabel = PRIORITIES.find((pr) => pr.value === p.priority)?.label || p.priority;
+  const hours = Number(p.estimated_hours || 0);
+  // Marge berekenen
+  const directExpense = db.finance.filter((f) => f.project_id === p.id && f.type === 'expense').reduce((s, f) => s + Number(f.amount), 0);
+  const revenueForMargin = actual || forecast || Number(p.value_amount || 0);
+  const margin = revenueForMargin - directExpense - hours * INTERNAL_HOURLY_RATE;
+  const marginPct = revenueForMargin ? margin / revenueForMargin : 0;
+  const showMargin = revenueForMargin > 0 || hours > 0 || directExpense > 0;
   return `
     <a class="project-row" href="#/projecten/${escapeHtml(p.id)}">
       <span class="project-row__status">${pipelineBadge(p.pipeline_status)}</span>
@@ -669,6 +676,7 @@ function projectRow(p, customer, db) {
         ${actual ? `<strong>${fmtCurrency(actual)}</strong>` : ''}
         ${forecast ? `<span class="muted${actual ? ' project-row__forecast' : ''}">${fmtCurrency(forecast)}${actual ? ' fc' : ' forecast'}</span>` : ''}
         ${!actual && !forecast ? '<span class="muted">—</span>' : ''}
+        ${showMargin ? `<span class="muted" style="font-size:.72rem;">marge ${fmtCurrency(margin)}${revenueForMargin ? ` · ${fmtNumber(marginPct * 100, 0)}%` : ''}</span>` : ''}
       </span>
       <span class="project-row__action">
         ${p.next_action ? `${escapeHtml(p.next_action)}${p.next_action_date ? `<span class="muted"> · ${dueLabel(p.next_action_date)}</span>` : ''}` : '<span class="muted">—</span>'}
@@ -676,6 +684,7 @@ function projectRow(p, customer, db) {
       <span class="project-row__meta">
         <span><strong>${openTasks.length}</strong> open</span>
         ${overdue.length ? `<span style="color:#FF8FB6;">${overdue.length} te laat</span>` : ''}
+        ${hours ? `<span class="muted">${fmtNumber(hours, 0)}u</span>` : ''}
         ${nextDueTask ? `<span class="muted">${dueLabel(nextDueTask.due_date)}</span>` : ''}
       </span>
     </a>`;
@@ -974,30 +983,50 @@ function renderTaken(db) {
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
   const projectsById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
   const open = db.tasks.filter((t) => t.status !== 'done');
+  const done = db.tasks.filter((t) => t.status === 'done')
+    .sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''))
+    .slice(0, 20);
   const overdue = open.filter((t) => relDays(t.due_date) !== null && relDays(t.due_date) < 0).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
   const today = open.filter((t) => relDays(t.due_date) === 0);
   const week = open.filter((t) => { const d = relDays(t.due_date); return d !== null && d > 0 && d <= 7; }).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
   const later = open.filter((t) => { const d = relDays(t.due_date); return d === null || d > 7; });
 
+  const taskRowOpen = (t, tone) => {
+    const proj = projectsById[t.project_id];
+    const cust = proj ? customersById[proj.customer_id] : null;
+    return [
+      `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" />`,
+      `<strong>${escapeHtml(t.title)}</strong>`,
+      `<a href="#/projecten/${escapeHtml(t.project_id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj?.name || '')}</a>`,
+      t.due_date ? badge(dueLabel(t.due_date), tone) : '<span class="muted">—</span>',
+      badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
+    ];
+  };
+
   const renderGroup = (title, items, tone) => `
     <section class="panel">
       <div class="panel-heading"><div><h2>${title}</h2><p>${items.length} ta${items.length === 1 ? 'ak' : 'ken'}</p></div></div>
+      ${table(['','Taak','Project','Deadline','Prio'], items.map((t) => taskRowOpen(t, tone)), { compact: true })}
+    </section>`;
+
+  const doneSection = done.length ? `
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Recent klaar</h2><p>${done.length} ta${done.length === 1 ? 'ak' : 'ken'} · vink uit om opnieuw te openen</p></div></div>
       ${table(
-        ['','Taak','Project','Deadline','Prio'],
-        items.map((t) => {
+        ['','Taak','Project','Klaar op'],
+        done.map((t) => {
           const proj = projectsById[t.project_id];
           const cust = proj ? customersById[proj.customer_id] : null;
           return [
-            `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" />`,
-            `<strong>${escapeHtml(t.title)}</strong>`,
+            `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" checked />`,
+            `<span style="text-decoration:line-through;color:var(--text-muted);">${escapeHtml(t.title)}</span>`,
             `<a href="#/projecten/${escapeHtml(t.project_id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj?.name || '')}</a>`,
-            t.due_date ? badge(dueLabel(t.due_date), tone) : '<span class="muted">—</span>',
-            badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
+            t.completed_at ? `<span class="muted">${fmtDate(t.completed_at)}</span>` : '<span class="muted">—</span>',
           ];
         }),
         { compact: true },
       )}
-    </section>`;
+    </section>` : '';
 
   return `
     <section class="page-section">
@@ -1007,6 +1036,7 @@ function renderTaken(db) {
       ${week.length ? renderGroup('Deze week', week, 'warning') : ''}
       ${later.length ? renderGroup('Later / zonder deadline', later, 'info') : ''}
       ${!open.length ? `<section class="panel"><p class="empty-state">Geen open taken.</p></section>` : ''}
+      ${doneSection}
     </section>`;
 }
 
