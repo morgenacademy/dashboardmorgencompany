@@ -58,8 +58,10 @@ const GOALS_2026 = {
 };
 
 const ACCEPTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
-const POTENTIAL_STAGES = ['verkennen','1e_gesprek'];
-const COMMITTED_STAGES = ['offerte_verzonden','onderhandeling','geaccepteerd','uitvoering'];
+// Potentieel = nog niet zeker (lead → offerte → onderhandeling)
+const POTENTIAL_STAGES = ['verkennen','1e_gesprek','offerte_verzonden','onderhandeling'];
+// Toegezegd = klant heeft ja gezegd, werk gaat gebeuren / loopt / is af
+const COMMITTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
 
 function ownerShares(owner = '') {
   const o = owner.toLowerCase();
@@ -297,8 +299,12 @@ function renderOverview(db) {
   const goalBreakPct = breakthroughs.length / GOALS_2026.breakthroughs;
   const goalRevenuePct = omzetGefactureerd / GOALS_2026.revenue;
 
-  // ===== Stand van zaken in EUR per fase =====
-  const splitByOwner = (projects, amountKey) => {
+  // ===== Stand van zaken in EUR — 4 commerciële statussen =====
+  // 1) Offerte verzonden: forecast op projecten in pipeline (kan nog misgaan)
+  // 2) Toegezegd: klant zei ja, factuur nog niet uit (verwacht-income op COMMITTED projecten)
+  // 3) Gefactureerd: factuur uit, klant moet betalen
+  // 4) Ontvangen: geld binnen
+  const splitProjectsByOwner = (projects, amountKey) => {
     const tally = { Karin: 0, Harmen: 0, Daan: 0, Onverdeeld: 0 };
     let total = 0;
     let trajecten = 0;
@@ -317,36 +323,39 @@ function renderOverview(db) {
     return { total, trajecten, klantenCount: klanten.size, tally };
   };
 
-  const potentieelProjects = db.projects.filter((p) => POTENTIAL_STAGES.includes(p.pipeline_status));
-  const toegezegdProjects = db.projects.filter((p) => COMMITTED_STAGES.includes(p.pipeline_status));
-  const potentieel = splitByOwner(potentieelProjects, 'forecast_amount');
-  const toegezegd  = splitByOwner(toegezegdProjects, 'value_amount');
-
-  // Gefactureerd: split per project owner via finance entries
-  const factTally = { Karin: 0, Harmen: 0, Daan: 0, Onverdeeld: 0 };
-  let factTotal = 0;
-  const factProjectsSet = new Set();
-  const factKlantenSet = new Set();
-  for (const f of incomeThisYear) {
-    if (!['ontvangen','gefactureerd'].includes(f.payment_status)) continue;
-    const value = Number(f.amount);
-    factTotal += value;
-    if (f.project_id) {
-      factProjectsSet.add(f.project_id);
-      const proj = projectsById[f.project_id];
-      if (proj) factKlantenSet.add(proj.customer_id);
+  const splitFinanceByOwner = (entries) => {
+    const tally = { Karin: 0, Harmen: 0, Daan: 0, Onverdeeld: 0 };
+    let total = 0;
+    const projectSet = new Set();
+    const klantenSet = new Set();
+    for (const f of entries) {
+      const value = Number(f.amount || 0);
+      if (!value) continue;
+      total += value;
+      const proj = f.project_id ? projectsById[f.project_id] : null;
+      if (proj) { projectSet.add(proj.id); klantenSet.add(proj.customer_id); }
       const shares = ownerShares(proj?.owner || f.owner || '');
       const keys = Object.keys(shares);
-      if (!keys.length) factTally.Onverdeeld += value;
-      for (const k of keys) factTally[k] = (factTally[k] || 0) + value * shares[k];
-    } else {
-      const shares = ownerShares(f.owner || '');
-      const keys = Object.keys(shares);
-      if (!keys.length) factTally.Onverdeeld += value;
-      for (const k of keys) factTally[k] = (factTally[k] || 0) + value * shares[k];
+      if (!keys.length) tally.Onverdeeld += value;
+      for (const k of keys) tally[k] = (tally[k] || 0) + value * shares[k];
     }
-  }
-  const gefactureerd = { total: factTotal, trajecten: factProjectsSet.size, klantenCount: factKlantenSet.size, tally: factTally };
+    return { total, trajecten: projectSet.size, klantenCount: klantenSet.size, tally };
+  };
+
+  // 1) Offerte verzonden: alle projecten in POTENTIAL_STAGES, telt forecast
+  const potentieel = splitProjectsByOwner(
+    db.projects.filter((p) => POTENTIAL_STAGES.includes(p.pipeline_status)),
+    'forecast_amount',
+  );
+
+  // 2/3/4: vanuit income finance entries dit jaar
+  const incomeWithCommittedProject = incomeThisYear.filter((f) => {
+    const proj = f.project_id ? projectsById[f.project_id] : null;
+    return proj && COMMITTED_STAGES.includes(proj.pipeline_status);
+  });
+  const toegezegd    = splitFinanceByOwner(incomeWithCommittedProject.filter((f) => f.payment_status === 'verwacht'));
+  const gefactureerd = splitFinanceByOwner(incomeThisYear.filter((f) => f.payment_status === 'gefactureerd'));
+  const ontvangen    = splitFinanceByOwner(incomeThisYear.filter((f) => f.payment_status === 'ontvangen'));
 
   // ===== Cashflow / run-rate =====
   const monthlyIncome = db.finance
@@ -523,30 +532,38 @@ function renderOverview(db) {
           })}
         </div>
 
-        <div class="champagne__row">
+        <div class="champagne__row champagne__row--four">
           ${stateTile({
-            title: 'Potentieel in 2026',
+            title: 'Offerte verzonden',
             count: `${potentieel.klantenCount} klant${potentieel.klantenCount === 1 ? '' : 'en'} · ${potentieel.trajecten} traject${potentieel.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(potentieel.total),
             tally: potentieel.tally,
-            tone: 'warning',
+            tone: 'danger',
             href: '#/projecten?stages=potentieel',
           })}
           ${stateTile({
-            title: 'Toegezegd in 2026',
+            title: 'Toegezegd',
             count: `${toegezegd.klantenCount} klant${toegezegd.klantenCount === 1 ? '' : 'en'} · ${toegezegd.trajecten} traject${toegezegd.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(toegezegd.total),
             tally: toegezegd.tally,
             tone: 'warning',
-            href: '#/projecten?stages=toegezegd',
+            href: '#/finance?type=income&payment=verwacht&year=2026',
           })}
           ${stateTile({
-            title: 'Gefactureerd in 2026',
+            title: 'Factuur verzonden',
             count: `${gefactureerd.klantenCount} klant${gefactureerd.klantenCount === 1 ? '' : 'en'} · ${gefactureerd.trajecten} traject${gefactureerd.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(gefactureerd.total),
             tally: gefactureerd.tally,
+            tone: 'warning',
+            href: '#/finance?type=income&payment=gefactureerd&year=2026',
+          })}
+          ${stateTile({
+            title: 'Ontvangen',
+            count: `${ontvangen.klantenCount} klant${ontvangen.klantenCount === 1 ? '' : 'en'} · ${ontvangen.trajecten} traject${ontvangen.trajecten === 1 ? '' : 'en'}`,
+            value: fmtCurrency(ontvangen.total),
+            tally: ontvangen.tally,
             tone: 'success',
-            href: '#/finance?type=income&payment=gefactureerd_ontvangen&year=2026',
+            href: '#/finance?type=income&payment=ontvangen&year=2026',
           })}
         </div>
       </section>
