@@ -3,7 +3,27 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 const SUPABASE_URL = 'https://jeqvjtnxgxpjviwhjmzr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uO70RUh9JTZZEykA_mUyzw_hyMNfi7-';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Volledig stateless: geen login meer, geen localStorage.
+try {
+  Object.keys(localStorage).forEach((k) => {
+    if (k.startsWith('sb-') || k.startsWith('morgendashboard')) localStorage.removeItem(k);
+  });
+} catch {}
+
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+    storage: noopStorage,
+  },
+});
 
 const listeners = new Set();
 let cache = {

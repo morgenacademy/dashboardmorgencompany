@@ -10,14 +10,13 @@ const PIPELINE_STAGES = [
   { value: 'verkennen',         label: 'Verkennen' },
   { value: '1e_gesprek',        label: '1e gesprek' },
   { value: 'offerte_verzonden', label: 'Offerte verzonden' },
-  { value: 'onderhandeling',    label: 'Onderhandeling' },
   { value: 'geaccepteerd',      label: 'Geaccepteerd' },
   { value: 'uitvoering',        label: 'Uitvoering' },
   { value: 'afgerond',          label: 'Afgerond' },
   { value: 'on_hold',           label: 'On hold' },
   { value: 'verloren',          label: 'Verloren' },
 ];
-const ACTIVE_STAGES = ['verkennen','1e_gesprek','offerte_verzonden','onderhandeling','geaccepteerd','uitvoering'];
+const ACTIVE_STAGES = ['verkennen','1e_gesprek','offerte_verzonden','geaccepteerd','uitvoering'];
 
 const TASK_STATUSES = [
   { value: 'open', label: 'Open' },
@@ -57,8 +56,8 @@ const GOALS_2026 = {
 };
 
 const ACCEPTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
-// Potentieel = nog niet zeker (lead → offerte → onderhandeling)
-const POTENTIAL_STAGES = ['verkennen','1e_gesprek','offerte_verzonden','onderhandeling'];
+// Potentieel = nog niet zeker (lead → offerte verzonden)
+const POTENTIAL_STAGES = ['verkennen','1e_gesprek','offerte_verzonden'];
 // Toegezegd = klant heeft ja gezegd, werk gaat gebeuren / loopt / is af
 const COMMITTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
 
@@ -372,10 +371,11 @@ function renderOverview(db) {
   const runRateNetto = recurringIncomeMonthly - recurringExpenseMonthly;
 
   // ===== Per service label (Inspire / Build / Train / Implement) =====
+  // Alleen projecten die echt 'gevallen' zijn: pipeline in COMMITTED (geaccepteerd / uitvoering / afgerond).
   const labelTotals = {};
   for (const lbl of SERVICE_LABELS) labelTotals[lbl.value] = { label: lbl.label, value: lbl.value, total: 0, count: 0 };
   for (const p of db.projects) {
-    if (!ACTIVE_STAGES.includes(p.pipeline_status)) continue;
+    if (!COMMITTED_STAGES.includes(p.pipeline_status)) continue;
     const amount = Number(p.actual_amount || 0) + Number(p.forecast_amount || 0);
     if (!amount) continue;
     const k = p.service_label || 'other';
@@ -629,19 +629,20 @@ function renderOverview(db) {
         </div>
 
         <div class="panel">
-          <div class="panel-heading"><div><h2>Pipeline</h2><p>Actieve projecten per stage.</p></div></div>
+          <div class="panel-heading"><div><h2>Pipeline</h2><p>Klik op een fase om de projecten te zien.</p></div></div>
           <div class="signal-stack">
-            ${byStage.map((group) => `
-              <div class="signal-card">
+            ${byStage.filter((g) => g.items.length).map((group) => {
+              const klanten = [...new Set(group.items.map((p) => customersById[p.customer_id]?.name).filter(Boolean))];
+              const totalValue = group.items.reduce((s, p) => s + Number(p.actual_amount || p.forecast_amount || p.value_amount || 0), 0);
+              return `
+              <a class="signal-card" href="#/projecten?pipeline_status=${escapeHtml(group.stage)}" style="text-decoration:none;color:inherit;">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
                   <strong>${escapeHtml(group.label)}</strong>
-                  <span class="muted">${group.items.length} · ${fmtCurrency(group.items.reduce((s, p) => s + Number(p.actual_amount || p.forecast_amount || p.value_amount || 0), 0))}</span>
+                  <span class="muted">${group.items.length} · ${fmtCurrency(totalValue)}</span>
                 </div>
-                <div>${group.items.map((p) => {
-                  const c = customersById[p.customer_id];
-                  return `<a href="#/projecten/${escapeHtml(p.id)}" class="muted" style="display:block;color:var(--text-primary);">${escapeHtml(c?.name || '')} · ${escapeHtml(p.name)}</a>`;
-                }).join('') || '<span class="muted">—</span>'}</div>
-              </div>`).join('')}
+                <div class="muted" style="font-size:.82rem;">${klanten.length ? klanten.map(escapeHtml).join(' · ') : '—'}</div>
+              </a>`;
+            }).join('') || '<span class="muted">Geen actieve projecten.</span>'}
           </div>
         </div>
       </div>
@@ -683,8 +684,8 @@ function renderProjectenList(db) {
   const route = parseRoute();
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
   const urlFilters = route.query || {};
-  const filterStatus = appState.filters.pipeline_status || '';
-  const filterType = appState.filters.product_type || '';
+  const filterStatus = urlFilters.pipeline_status || appState.filters.pipeline_status || '';
+  const filterType = urlFilters.product_type || appState.filters.product_type || '';
   const groupBy = appState.filters.group_by || 'status';
   const leadSource = urlFilters.lead_source || '';
   const breakthrough = urlFilters.breakthrough === '1';
@@ -999,6 +1000,105 @@ function renderTaken(db) {
     </section>`;
 }
 
+function renderFinanceBreakdown(entries, q) {
+  const personFilter = (q.person || 'totaal').toLowerCase();
+  // Per persoon filter: bepaal aandeel
+  const filtered = entries.filter((f) => {
+    if (personFilter === 'totaal') return true;
+    const owner = (f.owner || '').toLowerCase();
+    return owner.includes(personFilter);
+  });
+
+  // Groepeer per vendor + maand
+  const yearForChart = q.year || new Date().getFullYear().toString();
+  const ys = `${yearForChart}-01-01`;
+  const ye = `${yearForChart}-12-31`;
+  const monthsLbl = [];
+  for (let mi = 0; mi < 12; mi++) {
+    const d = new Date(Number(yearForChart), mi, 1);
+    monthsLbl.push({ m: d.toISOString().slice(0, 7), label: d.toLocaleDateString('nl-NL', { month: 'short' }) });
+  }
+
+  const rowsByVendor = {};
+  for (const f of filtered) {
+    if (!f.date || f.date < ys || f.date > ye) continue;
+    const vendor = f.vendor || f.description || '—';
+    if (!rowsByVendor[vendor]) rowsByVendor[vendor] = { vendor, category: f.category || '', recurring: f.recurring, total: 0, byMonth: {} };
+    const row = rowsByVendor[vendor];
+    const amount = Number(f.amount || 0);
+    if (f.recurring === 'monthly') {
+      const fromIdx = Math.max(0, monthsLbl.findIndex((mm) => mm.m >= f.date.slice(0, 7)));
+      for (let i = fromIdx; i < monthsLbl.length; i++) {
+        row.byMonth[monthsLbl[i].m] = (row.byMonth[monthsLbl[i].m] || 0) + amount;
+        row.total += amount;
+      }
+      if (f.category && !row.category) row.category = f.category;
+    } else {
+      const m = f.date.slice(0, 7);
+      row.byMonth[m] = (row.byMonth[m] || 0) + amount;
+      row.total += amount;
+    }
+  }
+  const vendorRows = Object.values(rowsByVendor).sort((a, b) => b.total - a.total);
+  const monthTotals = monthsLbl.map((mm) => vendorRows.reduce((s, r) => s + (r.byMonth[mm.m] || 0), 0));
+  const grandTotal = monthTotals.reduce((s, v) => s + v, 0);
+
+  const personHref = (p) => {
+    const params = new URLSearchParams(q);
+    if (p === 'totaal') params.delete('person'); else params.set('person', p);
+    return `#/finance?${params.toString()}`;
+  };
+
+  return `
+    <section class="panel">
+      <div class="panel-heading">
+        <div><h2>Breakdown</h2><p>${vendorRows.length} regels · totaal ${fmtCurrency(grandTotal)}</p></div>
+        <div class="person-toggle">
+          ${[
+            { v: 'totaal', l: 'Totaal' },
+            { v: 'harmen', l: 'Harmen' },
+            { v: 'karin',  l: 'Karin' },
+          ].map((p) => `<a href="${personHref(p.v)}" class="${personFilter === p.v ? 'active' : ''}">${p.l}</a>`).join('')}
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table compact breakdown-table">
+          <thead>
+            <tr>
+              <th>Leverancier / regel</th>
+              <th>Categorie</th>
+              ${monthsLbl.map((mm) => `<th style="text-align:right;">${escapeHtml(mm.label)}</th>`).join('')}
+              <th style="text-align:right;">Totaal</th>
+              <th>Recurring?</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${vendorRows.map((r) => `
+              <tr>
+                <td><strong>${escapeHtml(r.vendor)}</strong></td>
+                <td>${escapeHtml(r.category)}</td>
+                ${monthsLbl.map((mm) => {
+                  const v = r.byMonth[mm.m] || 0;
+                  return `<td style="text-align:right;${v ? '' : 'color:var(--text-muted);'}">${v ? fmtCurrency(v) : '—'}</td>`;
+                }).join('')}
+                <td style="text-align:right;"><strong>${fmtCurrency(r.total)}</strong></td>
+                <td>${r.recurring === 'monthly' ? '✓ Maandelijks' : r.recurring === 'one_off' ? 'Eenmalig' : escapeHtml(r.recurring || '')}</td>
+              </tr>
+            `).join('') || `<tr><td colspan="${4 + monthsLbl.length}" class="empty-cell">Geen records</td></tr>`}
+          </tbody>
+          <tfoot>
+            <tr style="border-top:2px solid rgba(155,111,207,.4);">
+              <td colspan="2"><strong>Totaal</strong></td>
+              ${monthTotals.map((v) => `<td style="text-align:right;"><strong>${v ? fmtCurrency(v) : '—'}</strong></td>`).join('')}
+              <td style="text-align:right;"><strong>${fmtCurrency(grandTotal)}</strong></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>`;
+}
+
 function renderFinance(db) {
   const route = parseRoute();
   const q = route.query || {};
@@ -1106,6 +1206,8 @@ function renderFinance(db) {
         ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', '#/finance')}
       </div>
 
+      ${activeFilters.length ? renderFinanceBreakdown(entries, q) : ''}
+
       <section class="panel forecast-panel">
         <div class="forecast-panel__head">
           <div>
@@ -1162,29 +1264,36 @@ function renderKlanten(db) {
     <section class="page-section">
       <div class="section-header"><div><h1>Klanten & samenwerkingen</h1></div></div>
       <section class="panel">
-        ${table(
-          ['Naam','Type','Industry','Status','Projecten','Werkelijk','Forecast'],
-          db.customers
-            .map((c) => ({
-              c,
-              projects: db.projects.filter((p) => p.customer_id === c.id),
-            }))
-            .map(({ c, projects }) => {
+        ${(() => {
+          const enriched = db.customers
+            .map((c) => {
+              const projects = db.projects.filter((p) => p.customer_id === c.id);
               const actual = projects.reduce((s, p) => s + Number(p.actual_amount || 0), 0);
               const forecast = projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
               return { c, projects, actual, forecast };
             })
-            .sort((a, b) => (b.actual + b.forecast) - (a.actual + a.forecast))
-            .map(({ c, projects, actual, forecast }) => [
-              `<a href="#/klanten/${escapeHtml(c.id)}"><strong>${escapeHtml(c.name)}</strong></a>`,
-              badge(c.type, c.type === 'klant' ? 'success' : c.type === 'samenwerking' ? 'info' : 'warning'),
-              escapeHtml(c.industry || ''),
-              badge(c.status, c.status === 'active' ? 'success' : 'default'),
-              `${projects.length}`,
-              actual ? `<strong>${fmtCurrency(actual)}</strong>` : '<span class="muted">—</span>',
-              forecast ? fmtCurrency(forecast) : '<span class="muted">—</span>',
-            ]),
-        )}
+            .sort((a, b) => (b.actual + b.forecast) - (a.actual + a.forecast));
+          const totalProjects = enriched.reduce((s, x) => s + x.projects.length, 0);
+          const totalActual   = enriched.reduce((s, x) => s + x.actual, 0);
+          const totalForecast = enriched.reduce((s, x) => s + x.forecast, 0);
+          const rows = enriched.map(({ c, projects, actual, forecast }) => [
+            `<a href="#/klanten/${escapeHtml(c.id)}"><strong>${escapeHtml(c.name)}</strong></a>`,
+            badge(c.type, c.type === 'klant' ? 'success' : c.type === 'samenwerking' ? 'info' : 'warning'),
+            escapeHtml(c.industry || ''),
+            badge(c.status, c.status === 'active' ? 'success' : 'default'),
+            `${projects.length}`,
+            actual ? `<strong>${fmtCurrency(actual)}</strong>` : '<span class="muted">—</span>',
+            forecast ? fmtCurrency(forecast) : '<span class="muted">—</span>',
+          ]);
+          rows.push([
+            '<strong>Totaal</strong>',
+            '', '', '',
+            `<strong>${totalProjects}</strong>`,
+            `<strong>${fmtCurrency(totalActual)}</strong>`,
+            `<strong>${fmtCurrency(totalForecast)}</strong>`,
+          ]);
+          return table(['Naam','Type','Industry','Status','Projecten','Werkelijk','Forecast'], rows);
+        })()}
       </section>
     </section>`;
 }
