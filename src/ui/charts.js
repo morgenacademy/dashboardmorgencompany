@@ -32,6 +32,58 @@ export function lineChart(series, key, color = '#2563eb') {
   return svg(width, height, `${grid}<path d="${path}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>${circles}${labels}`);
 }
 
+export function teamMonthlyChart({ months, series, currentMonth, ariaLabel = '' }) {
+  if (!months.length) return '<div class="empty-state">Geen maanddata.</div>';
+  const width = 1120;
+  const height = 280;
+  const padding = { top: 14, right: 14, bottom: 32, left: 56 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+
+  const allValues = series.flatMap((s) => months.map((m) => m[s.key] || 0));
+  const max = Math.max(...allValues, 1);
+
+  const xFor = (i) => padding.left + (months.length === 1 ? innerW / 2 : (i / (months.length - 1)) * innerW);
+  const yFor = (v) => padding.top + ((max - v) / max) * innerH;
+
+  const lastActualIdx = months.reduce((acc, m, i) => (m.month <= currentMonth ? i : acc), -1);
+
+  const grid = [0, 0.33, 0.66, 1].map((step) => {
+    const v = max * (1 - step);
+    const y = yFor(v);
+    return `<line class="chart-grid" x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}"/>
+            <text class="chart-label" x="${padding.left - 8}" y="${y + 4}" text-anchor="end">${formatCurrency(v)}</text>`;
+  }).join('');
+
+  const splitLine = (lastActualIdx >= 0 && lastActualIdx < months.length - 1)
+    ? `<line class="chart-split" x1="${xFor(lastActualIdx)}" x2="${xFor(lastActualIdx)}" y1="${padding.top}" y2="${padding.top + innerH}" stroke="rgba(155,111,207,.35)" stroke-dasharray="2 4"/>`
+    : '';
+
+  const linesSvg = series.map((s) => {
+    const points = months.map((m, i) => ({ x: xFor(i), y: yFor(m[s.key] || 0), v: m[s.key] || 0, isForecast: i > lastActualIdx, m }));
+    const actualPts = lastActualIdx >= 0 ? points.slice(0, lastActualIdx + 1) : [];
+    const forecastPts = lastActualIdx < points.length - 1 ? points.slice(Math.max(lastActualIdx, 0)) : [];
+    const path = (pts) => pts.length > 1 ? pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') : '';
+    const actualPath  = path(actualPts);
+    const forecastPath = path(forecastPts);
+    return `
+      ${actualPath ? `<path d="${actualPath}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+      ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${s.color}" stroke-width="1.6" stroke-dasharray="4 4" stroke-linecap="round" opacity="0.85"/>` : ''}
+    `;
+  }).join('');
+
+  const monthLabels = months.map((m, i) => `<text class="chart-label" x="${xFor(i).toFixed(1)}" y="${height - 10}" text-anchor="middle">${escapeMonth(m.label)}</text>`).join('');
+
+  return `<svg viewBox="0 0 ${width} ${height}" class="chart-svg" role="img" aria-label="${ariaLabel}" preserveAspectRatio="none">
+    ${grid}
+    ${splitLine}
+    ${linesSvg}
+    ${monthLabels}
+  </svg>`;
+}
+
+function escapeMonth(s) { return String(s || '').replace(/[<>]/g, ''); }
+
 export function dualLineChart({ series, actualKey, forecastKey, splitIndex, ariaLabel = '' }) {
   if (!series.length) return '<div class="empty-state">Geen data beschikbaar.</div>';
   const width = 720;

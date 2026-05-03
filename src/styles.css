@@ -233,6 +233,169 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
 }
 .metric-meta { color: var(--text-muted); font-size: .82rem; }
 
+/* ================= Champagne momenten ================= */
+
+.champagne { display: grid; gap: 14px; }
+.champagne__head {
+  display: grid; gap: 4px;
+  margin-bottom: 4px;
+}
+.champagne__head .eyebrow {
+  display: block;
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.champagne__head h2 {
+  margin: 0;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 900;
+  color: var(--white);
+  font-size: clamp(1.2rem, 1.8vw, 1.7rem);
+  line-height: 1.1;
+}
+.champagne__row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1100px) { .champagne__row { grid-template-columns: 1fr; } }
+
+.champ-tile {
+  display: grid; gap: 10px;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  background: var(--card-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.14);
+}
+.champ-tile--success { box-shadow: inset 4px 0 0 var(--accent), var(--shadow); }
+.champ-tile--warning { box-shadow: inset 4px 0 0 var(--purple-light), var(--shadow); }
+.champ-tile--danger  { box-shadow: inset 4px 0 0 var(--tone-danger), var(--shadow); }
+
+.champ-tile__head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+}
+.champ-tile__head h3 {
+  margin: 0;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--white);
+  line-height: 1.2;
+}
+.champ-tile__head .muted { font-size: .78rem; }
+.champ-tile__value {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 900;
+  font-size: clamp(1.6rem, 2.4vw, 2.1rem);
+  color: var(--white);
+  letter-spacing: 0;
+  line-height: 1;
+  margin-top: 2px;
+}
+.champ-tile__note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.status-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.status-pill--success { background: rgba(216,254,86,.16); border-color: rgba(216,254,86,.45); color: var(--accent); }
+.status-pill--warning { background: rgba(155,111,207,.20); border-color: rgba(155,111,207,.5);  color: var(--purple-light); }
+.status-pill--danger  { background: rgba(194,80,128,.18); border-color: rgba(194,80,128,.5);  color: #FF8FB6; }
+
+.progress-bar {
+  height: 6px;
+  background: rgba(255,255,255,.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width .4s cubic-bezier(.4,0,.2,1);
+}
+.champ-tile--success .progress-bar > span { background: var(--accent); }
+.champ-tile--warning .progress-bar > span { background: var(--purple-light); }
+.champ-tile--danger  .progress-bar > span { background: var(--tone-danger); }
+
+/* ================= Label tiles (Inspire/Build/Train/Implement) ================= */
+
+.label-panel { display: grid; gap: 14px; }
+.label-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1100px) { .label-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .label-grid { grid-template-columns: 1fr; } }
+
+.label-tile {
+  display: grid; gap: 10px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--card-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.14);
+}
+.label-tile header {
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.label-tile h3 {
+  margin: 0;
+  font-family: 'Barlow', sans-serif;
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--white);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.label-tile__pct {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 700;
+  font-size: .9rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+}
+.label-tile strong {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 900;
+  font-size: 1.5rem;
+  color: var(--white);
+  line-height: 1;
+}
+
+/* Per-label accent kleurtjes */
+.label-tile--inspire   { box-shadow: inset 4px 0 0 var(--accent), var(--shadow); }
+.label-tile--inspire .progress-bar > span { background: var(--accent); }
+.label-tile--build     { box-shadow: inset 4px 0 0 var(--purple-light), var(--shadow); }
+.label-tile--build .progress-bar > span { background: var(--purple-light); }
+.label-tile--train     { box-shadow: inset 4px 0 0 #8FB6FF, var(--shadow); }
+.label-tile--train .progress-bar > span { background: #8FB6FF; }
+.label-tile--implement { box-shadow: inset 4px 0 0 #FF8FB6, var(--shadow); }
+.label-tile--implement .progress-bar > span { background: #FF8FB6; }
+
 /* ================= Forecast panel ================= */
 
 .forecast-panel { padding: 18px 22px; }
@@ -241,13 +404,24 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
   justify-content: space-between;
   align-items: flex-end;
   gap: 16px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .forecast-panel__head > div:first-child {
   display: flex; flex-direction: column; gap: 2px;
 }
-.forecast-panel .chart-svg { max-height: 140px; }
+.forecast-panel .chart-svg { max-height: 280px; }
+.chart-legend {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: .74rem; color: var(--text-secondary);
+}
+.chart-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot {
+  display: inline-block;
+  width: 10px; height: 3px; border-radius: 2px;
+}
+.chart-svg .chart-grid { stroke: rgba(155,111,207,.18); }
+.chart-svg .chart-split { stroke-width: 1; }
 
 /* ================= Project list (table-like) ================= */
 

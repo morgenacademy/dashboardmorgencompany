@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morgen Company Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Morgen Company</p>
+          <h1>Dashboard</h1>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Champagne Momenten</p>
+              <h2>Doelen en status van het gekozen jaar</h2>
+            </div>
+          </div>
+          <div id="goal-kpis" class="goal-grid"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Labels</p>
+              <h2>Forecast per label</h2>
+            </div>
+          </div>
+          <div id="category-revenue" class="category-grid"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Grafiek</p>
+              <h2>Opbrengst, kosten en forecast</h2>
+            </div>
+            <div class="section-actions">
+              <label class="month-picker">
+                <span>Kies jaar</span>
+                <select id="focus-year"></select>
+              </label>
+              <button id="reset-demo" class="ghost-button" type="button">
+                Herstel basisdata
+              </button>
+            </div>
+          </div>
+          <div id="team-liquidity" class="liquidity-chart"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Klantenbeeld</p>
+              <h2>Potentieel, toegezegd en gefactureerd</h2>
+            </div>
+          </div>
+          <div id="customer-board" class="customer-grid"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Per maand</p>
+              <h2>Maandelijkse forecast binnen het jaar</h2>
+            </div>
+          </div>
+          <div id="monthly-performance"></div>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Beheer</p>
+              <h2>Data aanpassen</h2>
+            </div>
+          </div>
+
+          <div class="management-actions">
+            <button id="add-project-button" class="primary-button" type="button">
+              Klant toevoegen
+            </button>
+            <button id="add-cost-button" class="ghost-button" type="button">
+              Kosten toevoegen
+            </button>
+          </div>
+
+          <div class="management-inventory">
+            <section class="management-list-card">
+              <div class="management-list-header">
+                <div>
+                  <div class="section-label">Klanten</div>
+                  <h3>Bestaande klanten en trajecten</h3>
+                </div>
+              </div>
+              <div id="project-list" class="inventory-grid"></div>
+            </section>
+
+            <section class="management-list-card">
+              <div class="management-list-header">
+                <div>
+                  <div class="section-label">Kosten</div>
+                  <h3>Terugkerende kosten</h3>
+                </div>
+              </div>
+              <div id="cost-list" class="inventory-grid"></div>
+            </section>
+          </div>
+
+          <div class="management-grid">
+            <details class="management-card" id="project-panel">
+              <summary>Project of klant opvoeren</summary>
+              <form id="project-form" class="stack-form">
+                <label>
+                  <span>Klant of project</span>
+                  <input name="name" type="text" placeholder="Bijv. Zjoske Kanters" required />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select name="stage" required>
+                    <option value="pipeline">Potentieel</option>
+                    <option value="active">Toegezegd, nog niet gefactureerd</option>
+                    <option value="completed">Gefactureerd</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Bedrag</span>
+                  <input name="monthlyRevenue" type="number" step="0.01" required />
+                </label>
+                <label>
+                  <span>Categorie</span>
+                  <select name="category" required>
+                    <option value="uncategorized">Nog in te delen</option>
+                    <option value="train">Train</option>
+                    <option value="build">Build</option>
+                    <option value="implement">Implement</option>
+                    <option value="inspire">Inspire</option>
+                  </select>
+                </label>
+                <label class="checkbox-field">
+                  <input name="outsideNetwork" type="checkbox" />
+                  <span>Klant buiten eigen netwerk</span>
+                </label>
+                <label>
+                  <span>Valt onder</span>
+                  <select name="owner" required>
+                    <option value="karin">Karin</option>
+                    <option value="harmen">Harmen</option>
+                    <option value="shared">Gedeeld 50/50</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Startmaand</span>
+                  <input name="startMonth" type="month" required />
+                </label>
+                <label>
+                  <span>Eindmaand</span>
+                  <input name="endMonth" type="month" />
+                </label>
+                <label>
+                  <span>Notitie</span>
+                  <textarea
+                    name="notes"
+                    rows="3"
+                    placeholder="Bijv. resterende 50% staat nog open"
+                  ></textarea>
+                </label>
+                <div class="form-actions">
+                  <button id="project-submit" class="primary-button" type="submit">
+                    Project opslaan
+                  </button>
+                  <button id="project-cancel" class="ghost-button" type="button" hidden>
+                    Annuleer
+                  </button>
+                </div>
+              </form>
+            </details>
+
+            <details class="management-card" id="cost-panel">
+              <summary>Terugkerende kosten opvoeren</summary>
+              <form id="cost-form" class="stack-form">
+                <label>
+                  <span>Kostenregel</span>
+                  <input name="label" type="text" placeholder="Bijv. Canva" required />
+                </label>
+                <label>
+                  <span>Bedrag per maand</span>
+                  <input name="amount" type="number" step="0.01" required />
+                </label>
+                <label>
+                  <span>Valt onder</span>
+                  <select name="owner" required>
+                    <option value="karin">Karin</option>
+                    <option value="harmen">Harmen</option>
+                    <option value="shared">Gedeeld 50/50</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Koppel aan project</span>
+                  <select name="projectId" id="cost-project-select">
+                    <option value="">Algemene kosten</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Startmaand</span>
+                  <input name="startMonth" type="month" required />
+                </label>
+                <label>
+                  <span>Eindmaand</span>
+                  <input name="endMonth" type="month" />
+                </label>
+                <div class="form-actions">
+                  <button id="cost-submit" class="primary-button" type="submit">
+                    Kosten opslaan
+                  </button>
+                  <button id="cost-cancel" class="ghost-button" type="button" hidden>
+                    Annuleer
+                  </button>
+                </div>
+              </form>
+            </details>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
