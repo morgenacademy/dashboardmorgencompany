@@ -126,7 +126,9 @@ function dueTone(dateStr) {
   return 'info';
 }
 
-const appState = { route: '/', filters: {}, chartHidden: new Set() };
+const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null };
+
+const OWNER_OPTIONS = ['Harmen', 'Karin', 'Daan', 'Harmen & Karin', 'Harmen & Daan', 'Karin & Daan'];
 
 subscribe(() => renderApp());
 
@@ -1496,39 +1498,69 @@ function attachEvents() {
     });
   });
 
-  document.querySelector('[data-action="add-task"]')?.addEventListener('click', async (e) => {
+  document.querySelector('[data-action="add-task"]')?.addEventListener('click', (e) => {
     const projectId = e.currentTarget.dataset.projectId;
-    const title = prompt('Taak titel?');
-    if (!title) return;
-    const due = prompt('Deadline (YYYY-MM-DD, leeg = geen)?', '');
-    const priority = prompt('Prio (high/medium/low)?', 'medium');
-    const isAfspraak = confirm('Is dit een afspraak/meeting? OK = ja → datum, tijd en locatie.');
-    let meeting_at = null;
-    let location = '';
-    let meeting_duration_minutes = 60;
-    if (isAfspraak) {
-      const dt = prompt('Datum + tijd (YYYY-MM-DD HH:MM, lokale tijd Amsterdam)?', due ? `${due} 10:00` : '');
-      if (dt && /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(dt.trim())) {
-        // Bouw een ISO-string met +02:00 (zomer NL). Voor andere tijden mag user later in DB tweaken.
-        meeting_at = new Date(dt.replace(' ', 'T') + ':00+02:00').toISOString();
-      }
-      location = prompt('Locatie?', '') || '';
-      const dur = prompt('Duur in minuten?', '60');
-      meeting_duration_minutes = Number(dur) || 60;
-    }
-    await upsertTask({
-      id: nextId('tsk'),
+    const project = getDatabase().projects.find((p) => p.id === projectId);
+    appState.editingTask = {
       project_id: projectId,
-      title,
+      title: '',
       description: '',
+      owner: project?.owner || 'Harmen',
+      priority: 'medium',
+      due_date: null,
+      meeting_at: null,
+      location: '',
+      meeting_duration_minutes: 60,
+    };
+    renderApp();
+  });
+
+  document.querySelector('[data-action="dialog-cancel"]')?.addEventListener('click', () => {
+    appState.editingTask = null;
+    document.getElementById('task-dialog')?.close();
+    renderApp();
+  });
+
+  document.querySelector('[data-action="toggle-meeting"]')?.addEventListener('change', (e) => {
+    const fields = document.querySelector('.meeting-fields');
+    if (!fields) return;
+    fields.style.display = e.target.checked ? '' : 'none';
+  });
+
+  // Backdrop click → sluit
+  document.getElementById('task-dialog')?.addEventListener('click', (e) => {
+    if (e.target.id === 'task-dialog') {
+      appState.editingTask = null;
+      e.target.close();
+      renderApp();
+    }
+  });
+
+  document.getElementById('task-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const isMeeting = data.is_meeting === 'on';
+    const payload = {
+      id: data.id || nextId('tsk'),
+      project_id: data.project_id,
+      title: data.title.trim(),
+      description: (data.description || '').trim(),
       status: 'open',
-      priority: ['high','medium','low'].includes(priority) ? priority : 'medium',
-      due_date: due || null,
-      owner: 'Harmen',
-      meeting_at,
-      location,
-      meeting_duration_minutes,
-    });
+      priority: data.priority || 'medium',
+      due_date: data.due_date || null,
+      owner: data.owner || 'Harmen',
+      meeting_at: isMeeting && data.meeting_at ? new Date(data.meeting_at).toISOString() : null,
+      location: isMeeting ? (data.location || '') : '',
+      meeting_duration_minutes: isMeeting ? Number(data.meeting_duration_minutes || 60) : 60,
+    };
+    if (!payload.title) return;
+    try {
+      await upsertTask(payload);
+      appState.editingTask = null;
+      document.getElementById('task-dialog')?.close();
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
   });
 
   document.getElementById('project-form')?.addEventListener('submit', async (e) => {
@@ -1569,7 +1601,70 @@ export function renderApp() {
       <main class="main-content">
         ${db.loading ? '<section class="panel"><p class="empty-state">Data laden uit Supabase…</p></section>' : renderPage(db, route)}
       </main>
-    </div>`;
+    </div>
+    ${renderTaskDialog(db)}`;
   attachEvents();
+  if (appState.editingTask) {
+    const dlg = document.getElementById('task-dialog');
+    if (dlg && !dlg.open) dlg.showModal();
+  }
+}
+
+function renderTaskDialog(db) {
+  const t = appState.editingTask;
+  if (!t) return '';
+  const project = db.projects.find((p) => p.id === t.project_id);
+  const customer = project ? db.customers.find((c) => c.id === project.customer_id) : null;
+  const isMeeting = !!t.meeting_at;
+  const localDt = t.meeting_at ? new Date(t.meeting_at).toISOString().slice(0, 16) : '';
+  const ownerSelected = t.owner || project?.owner || 'Harmen';
+  const inOwnerOptions = OWNER_OPTIONS.includes(ownerSelected);
+  return `
+    <dialog id="task-dialog" class="task-dialog">
+      <form id="task-form" class="stack-form">
+        <header class="task-dialog__head">
+          <div>
+            <span class="eyebrow" style="color:var(--accent);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600;">${t.id ? 'Taak bewerken' : 'Nieuwe taak'}</span>
+            ${customer ? `<p class="muted" style="margin:6px 0 0;">${escapeHtml(customer.name)} · ${escapeHtml(project?.name || '')}</p>` : ''}
+          </div>
+          <button type="button" class="task-dialog__close" data-action="dialog-cancel" aria-label="Sluiten">×</button>
+        </header>
+        <input type="hidden" name="id" value="${escapeHtml(t.id || '')}" />
+        <input type="hidden" name="project_id" value="${escapeHtml(t.project_id || '')}" />
+        <label><span>Titel</span><input type="text" name="title" value="${escapeHtml(t.title || '')}" required /></label>
+        <label><span>Beschrijving</span><textarea name="description" rows="3">${escapeHtml(t.description || '')}</textarea></label>
+        <div class="filter-grid">
+          <label><span>Voor wie</span>
+            <select name="owner">
+              ${OWNER_OPTIONS.map((o) => `<option value="${escapeHtml(o)}" ${o === ownerSelected ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+              ${!inOwnerOptions && ownerSelected ? `<option value="${escapeHtml(ownerSelected)}" selected>${escapeHtml(ownerSelected)}</option>` : ''}
+            </select>
+          </label>
+          <label><span>Deadline</span><input type="date" name="due_date" value="${t.due_date || ''}" /></label>
+          <label><span>Prio</span>
+            <select name="priority">
+              <option value="low"    ${t.priority === 'low' ? 'selected' : ''}>Laag</option>
+              <option value="medium" ${(t.priority === 'medium' || !t.priority) ? 'selected' : ''}>Medium</option>
+              <option value="high"   ${t.priority === 'high' ? 'selected' : ''}>Hoog</option>
+            </select>
+          </label>
+        </div>
+        <label class="task-dialog__check">
+          <input type="checkbox" name="is_meeting" data-action="toggle-meeting" ${isMeeting ? 'checked' : ''} />
+          <span>Dit is een afspraak / meeting</span>
+        </label>
+        <div class="meeting-fields" style="${isMeeting ? '' : 'display:none;'}">
+          <div class="filter-grid">
+            <label><span>Datum + tijd</span><input type="datetime-local" name="meeting_at" value="${localDt}" /></label>
+            <label><span>Duur (min)</span><input type="number" name="meeting_duration_minutes" value="${t.meeting_duration_minutes || 60}" min="15" step="15" /></label>
+            <label><span>Locatie</span><input type="text" name="location" value="${escapeHtml(t.location || '')}" placeholder="Den Bosch, online, …" /></label>
+          </div>
+        </div>
+        <div class="task-dialog__actions">
+          <button type="button" class="button ghost" data-action="dialog-cancel">Annuleren</button>
+          <button type="submit" class="button primary">${t.id ? 'Opslaan' : '+ Taak toevoegen'}</button>
+        </div>
+      </form>
+    </dialog>`;
 }
 

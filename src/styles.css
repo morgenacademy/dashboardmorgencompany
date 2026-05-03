@@ -293,6 +293,67 @@ a.champ-tile:hover, a.label-tile:hover, a.metric-card:hover,
   border-color: rgba(255,255,255,.32);
 }
 
+/* ================= Task dialog ================= */
+
+.task-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(35, 22, 60, .98), rgba(20, 12, 40, .98));
+  color: var(--text-primary);
+  box-shadow: 0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(155,111,207,.2);
+  overflow: hidden;
+}
+.task-dialog::backdrop {
+  background: rgba(12, 8, 24, .72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.task-dialog form {
+  padding: 24px 26px 22px;
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+.task-dialog__head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.task-dialog__close {
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  width: 32px; height: 32px;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  line-height: 1;
+}
+.task-dialog__close:hover { color: var(--white); border-color: rgba(255,255,255,.32); }
+.task-dialog__check {
+  display: flex !important; align-items: center; gap: 10px;
+  font-size: .9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.task-dialog__check input { width: auto; height: auto; }
+.task-dialog__actions {
+  display: flex; justify-content: flex-end; gap: 10px;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(155,111,207,.15);
+}
+
 /* Person toggle (Totaal / Harmen / Karin) */
 .person-toggle {
   display: inline-flex;
