@@ -5,7 +5,6 @@ import {
   upsertCustomer, upsertFinance, nextId,
 } from './data/store.js';
 import { lineChart, barChart, dualLineChart, teamMonthlyChart } from './ui/charts.js';
-import { logout } from './ui/login.js';
 
 const PIPELINE_STAGES = [
   { value: 'verkennen',         label: 'Verkennen' },
@@ -1282,8 +1281,6 @@ function attachEvents() {
     });
   });
 
-  document.querySelector('[data-action="logout"]')?.addEventListener('click', () => logout());
-
   document.querySelectorAll('[data-action="download-ics"]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const id = e.currentTarget.dataset.taskId;
@@ -1403,7 +1400,6 @@ export function renderApp() {
         </div>
         ${renderNavigation(route)}
         ${db.error ? `<p class="muted" style="margin-top:24px;color:var(--tone-danger);">⚠ ${escapeHtml(db.error)}</p>` : ''}
-        <button type="button" class="button ghost" data-action="logout" style="margin-top:auto;width:100%;">Uitloggen</button>
       </aside>
       <main class="main-content">
         ${db.loading ? '<section class="panel"><p class="empty-state">Data laden uit Supabase…</p></section>' : renderPage(db, route)}
