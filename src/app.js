@@ -1,39 +1,97 @@
-import { getDatabase, subscribe, upsertRecord, importRecords, nextId, resetDatabase } from './data/store.js';
-import { buildDashboard, formatCurrency, formatNumber, formatPercent } from './domain/metrics.js';
-import { entityDefinitions, normalizeRecord, parseCsv, validateRecord } from './domain/validation.js';
-import { barChart, lineChart, scatterPlot } from './ui/charts.js';
+import {
+  getDatabase, subscribe, loadAll,
+  upsertProject, deleteProject,
+  upsertTask, deleteTask,
+  upsertCustomer, upsertFinance, nextId,
+} from './data/store.js';
+import { lineChart, barChart, dualLineChart } from './ui/charts.js';
+import { logout } from './ui/login.js';
 
-const defaultFilters = {
-  startDate: '2025-01-01',
-  endDate: '2025-12-31',
-  platform: '',
-  category: '',
-  productId: '',
-  customerId: '',
-  customerStatus: '',
+const PIPELINE_STAGES = [
+  { value: 'verkennen',         label: 'Verkennen' },
+  { value: '1e_gesprek',        label: '1e gesprek' },
+  { value: 'offerte_verzonden', label: 'Offerte verzonden' },
+  { value: 'onderhandeling',    label: 'Onderhandeling' },
+  { value: 'geaccepteerd',      label: 'Geaccepteerd' },
+  { value: 'uitvoering',        label: 'Uitvoering' },
+  { value: 'afgerond',          label: 'Afgerond' },
+  { value: 'on_hold',           label: 'On hold' },
+  { value: 'verloren',          label: 'Verloren' },
+];
+const ACTIVE_STAGES = ['verkennen','1e_gesprek','offerte_verzonden','onderhandeling','geaccepteerd','uitvoering'];
+
+const TASK_STATUSES = [
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'Bezig' },
+  { value: 'blocked', label: 'Geblokkeerd' },
+  { value: 'done', label: 'Klaar' },
+];
+
+const PRIORITIES = [
+  { value: 'high', label: 'Hoog' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Laag' },
+];
+
+const PRODUCT_TYPES = [
+  { value: 'training', label: 'Training' },
+  { value: 'programma', label: 'Programma' },
+  { value: 'automatisering', label: 'Automatisering' },
+  { value: 'strategie', label: 'Strategie' },
+  { value: 'samenwerking', label: 'Samenwerking' },
+  { value: 'abonnement', label: 'Abonnement' },
+  { value: 'other', label: 'Overig' },
+];
+
+const PIPELINE_TONE = {
+  verkennen: 'info', '1e_gesprek': 'info', offerte_verzonden: 'warning',
+  onderhandeling: 'warning', geaccepteerd: 'success', uitvoering: 'success',
+  afgerond: 'default', on_hold: 'default', verloren: 'danger',
 };
 
-const appState = {
-  db: getDatabase(),
-  filters: { ...defaultFilters },
-};
-
-subscribe((db) => {
-  appState.db = db;
-  renderApp();
-});
-
-function html(strings, ...values) {
-  return strings.reduce((result, string, index) => result + string + (values[index] ?? ''), '');
+function fmtCurrency(value) {
+  return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value || 0);
 }
-
+function fmtNumber(value, digits = 0) {
+  return new Intl.NumberFormat('nl-NL', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value || 0);
+}
+function fmtDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 function escapeHtml(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+  return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 }
+function relDays(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(dateStr); d.setHours(0,0,0,0);
+  return Math.round((d - today) / 86400000);
+}
+function dueLabel(dateStr) {
+  const days = relDays(dateStr);
+  if (days === null) return '';
+  if (days < 0) return `${-days} dagen te laat`;
+  if (days === 0) return 'Vandaag';
+  if (days === 1) return 'Morgen';
+  if (days <= 7) return `Over ${days} dagen`;
+  return fmtDate(dateStr);
+}
+function dueTone(dateStr) {
+  const days = relDays(dateStr);
+  if (days === null) return 'default';
+  if (days < 0) return 'danger';
+  if (days <= 2) return 'warning';
+  return 'info';
+}
+
+const appState = { route: '/', filters: {} };
+
+subscribe(() => renderApp());
+
+window.addEventListener('hashchange', () => renderApp());
 
 function parseRoute() {
   const hash = window.location.hash.replace(/^#/, '') || '/';
@@ -42,461 +100,803 @@ function parseRoute() {
   return { path, parts };
 }
 
-function currentDashboard() {
-  return buildDashboard(appState.db, appState.filters);
-}
+// ============== Components ==============
 
 function metricCard(label, value, meta = '', tone = 'default') {
-  return `<article class="metric-card metric-${tone}"><span class="metric-label">${label}</span><strong class="metric-value">${value}</strong><span class="metric-meta">${meta}</span></article>`;
+  return `<article class="metric-card metric-${tone}">
+    <span class="metric-label">${escapeHtml(label)}</span>
+    <strong class="metric-value">${value}</strong>
+    <span class="metric-meta">${escapeHtml(meta)}</span>
+  </article>`;
 }
 
-function badge(signal) {
-  return `<span class="badge badge-${signal.tone || 'default'}">${signal.label}</span>`;
+function badge(text, tone = 'default') {
+  return `<span class="badge badge-${tone}">${escapeHtml(text)}</span>`;
 }
 
-function renderSignalList(signals) {
-  if (!signals?.length) return '<span class="muted">Geen signalen</span>';
-  return signals.map(badge).join('');
+function projectValueCell(p) {
+  const actual = Number(p.actual_amount || 0);
+  const forecast = Number(p.forecast_amount || 0);
+  if (actual && forecast) return `<strong>${fmtCurrency(actual)}</strong> <span class="muted">+ ${fmtCurrency(forecast)} fc</span>`;
+  if (actual) return `<strong>${fmtCurrency(actual)}</strong>`;
+  if (forecast) return `<span class="muted">${fmtCurrency(forecast)} forecast</span>`;
+  if (Number(p.value_amount)) return `<span class="muted">${fmtCurrency(p.value_amount)}</span>`;
+  return '<span class="muted">—</span>';
+}
+
+function pipelineBadge(stage) {
+  const item = PIPELINE_STAGES.find((s) => s.value === stage);
+  return badge(item?.label || stage, PIPELINE_TONE[stage] || 'default');
 }
 
 function table(headers, rows, options = {}) {
   return `
     <div class="table-wrap">
       <table class="data-table ${options.compact ? 'compact' : ''}">
-        <thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead>
-        <tbody>${rows.length ? rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" class="empty-cell">Geen records</td></tr>`}</tbody>
+        <thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.length
+          ? rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')
+          : `<tr><td colspan="${headers.length}" class="empty-cell">Geen records</td></tr>`}</tbody>
       </table>
     </div>`;
 }
 
-function selectOptions(items, mapFn, placeholder = 'Alle') {
-  return [`<option value="">${placeholder}</option>`, ...items.map(mapFn)].join('');
+function selectOptions(items, current, valueKey = 'value', labelKey = 'label') {
+  return items.map((item) => `<option value="${escapeHtml(item[valueKey])}" ${item[valueKey] === current ? 'selected' : ''}>${escapeHtml(item[labelKey])}</option>`).join('');
 }
 
-function renderFilters(dashboard) {
-  const platforms = [...new Set(dashboard.enriched.products.filter((product) => product.isCommercial).map((product) => product.platform))];
-  const categories = [...new Set(dashboard.enriched.products.filter((product) => product.isCommercial).map((product) => product.category))];
-  return html`
-    <section class="filters panel">
-      <div class="panel-heading">
-        <div>
-          <h2>Sturing & filters</h2>
-          <p>Gebruik dezelfde filterlaag voor management, klant- en productviews.</p>
-        </div>
-      </div>
-      <form id="filters-form" class="filter-grid">
-        <label><span>Start</span><input type="date" name="startDate" value="${appState.filters.startDate}" /></label>
-        <label><span>Einde</span><input type="date" name="endDate" value="${appState.filters.endDate}" /></label>
-        <label><span>Platform</span><select name="platform">${selectOptions(platforms, (platform) => `<option value="${platform}" ${appState.filters.platform === platform ? 'selected' : ''}>${platform}</option>`)}</select></label>
-        <label><span>Categorie</span><select name="category">${selectOptions(categories, (category) => `<option value="${category}" ${appState.filters.category === category ? 'selected' : ''}>${category}</option>`)}</select></label>
-        <label><span>Product</span><select name="productId">${selectOptions(dashboard.enriched.products.filter((product) => product.isCommercial), (product) => `<option value="${product.id}" ${appState.filters.productId === product.id ? 'selected' : ''}>${product.name}</option>`)}</select></label>
-        <label><span>Klant</span><select name="customerId">${selectOptions(dashboard.enriched.customers, (customer) => `<option value="${customer.id}" ${appState.filters.customerId === customer.id ? 'selected' : ''}>${customer.name}</option>`)}</select></label>
-        <label><span>Klantstatus</span><select name="customerStatus">${selectOptions([{ value: 'active', label: 'Actief' }, { value: 'inactive', label: 'Inactief' }], (item) => `<option value="${item.value}" ${appState.filters.customerStatus === item.value ? 'selected' : ''}>${item.label}</option>`)}</select></label>
-        <div class="filter-actions">
-          <button type="submit" class="button primary">Pas filters toe</button>
-          <button type="button" class="button ghost" data-action="reset-filters">Reset</button>
-        </div>
-      </form>
-    </section>`;
-}
+// ============== Pages ==============
 
-function renderOverview(dashboard) {
-  const { overview, spotlight, products } = dashboard;
-  const signalCards = [
-    spotlight.topRevenueProduct && { title: 'Top revenue product', body: `${spotlight.topRevenueProduct.name} · ${formatCurrency(spotlight.topRevenueProduct.metrics.revenue)}` },
-    spotlight.bestRatedProduct && { title: 'Best rated product', body: `${spotlight.bestRatedProduct.name} · ${formatNumber(spotlight.bestRatedProduct.metrics.avgRating, 1)} / 5` },
-    spotlight.bestRevenuePerHour && { title: 'Best revenue per hour', body: `${spotlight.bestRevenuePerHour.name} · ${formatCurrency(spotlight.bestRevenuePerHour.metrics.revenuePerHour)}/uur` },
-    spotlight.atRiskCustomer && { title: 'At-risk customer', body: `${spotlight.atRiskCustomer.name} · NPS ${formatNumber(spotlight.atRiskCustomer.metrics.avgNps, 0)}` },
-  ].filter(Boolean);
+function renderOverview(db) {
+  const today = new Date().toISOString().slice(0, 10);
+  const yearStart = today.slice(0, 4) + '-01-01';
+  const yearEnd   = today.slice(0, 4) + '-12-31';
+  const activeProjects = db.projects.filter((p) => ACTIVE_STAGES.includes(p.pipeline_status));
 
-  return html`
+  // === KPI 1: Bookings YTD ===
+  // Wat dit jaar zeker is/komt: ontvangen + gefactureerde income binnen het jaar.
+  const incomeThisYear = db.finance.filter((f) => f.type === 'income' && f.date >= yearStart && f.date <= yearEnd);
+  const bookings = incomeThisYear
+    .filter((f) => ['ontvangen','gefactureerd'].includes(f.payment_status))
+    .reduce((s, f) => s + Number(f.amount), 0);
+  const ontvangen = incomeThisYear
+    .filter((f) => f.payment_status === 'ontvangen')
+    .reduce((s, f) => s + Number(f.amount), 0);
+
+  // === KPI 2: Forecast pipeline ===
+  // Wat we kunnen winnen — projecten die nog niet definitief zijn.
+  const forecastPipeline = db.projects
+    .filter((p) => ['verkennen','1e_gesprek','offerte_verzonden','onderhandeling'].includes(p.pipeline_status))
+    .reduce((sum, p) => sum + Number(p.forecast_amount || 0), 0);
+
+  // === KPI 3: Run-rate netto ===
+  // Som van recurring monthly income - expenses (per maand cashflow)
+  const monthlyIncome = db.finance
+    .filter((f) => f.type === 'income' && f.recurring === 'monthly')
+    .reduce((acc, f) => { acc[f.project_id || f.vendor || f.id] = Number(f.amount); return acc; }, {});
+  const recurringIncomeMonthly = Object.values(monthlyIncome).reduce((s, v) => s + v, 0);
+  const monthlyExpense = db.finance
+    .filter((f) => f.type === 'expense' && f.recurring === 'monthly')
+    .reduce((acc, f) => {
+      const key = f.vendor || f.description;
+      acc[key] = Math.max(acc[key] || 0, Number(f.amount));
+      return acc;
+    }, {});
+  const recurringExpenseMonthly = Object.values(monthlyExpense).reduce((s, v) => s + v, 0);
+  const runRateNetto = recurringIncomeMonthly - recurringExpenseMonthly;
+
+  const openTasks = db.tasks.filter((t) => t.status !== 'done');
+  const overdueTasks = openTasks.filter((t) => relDays(t.due_date) !== null && relDays(t.due_date) < 0);
+
+  const expenseYtd = db.finance.filter((f) => f.type === 'expense' && f.date >= yearStart && f.date <= yearEnd).reduce((s, f) => s + Number(f.amount), 0);
+
+  // === Forecast trend chart: cumulatieve revenue per maand ===
+  // Werkelijk: ontvangen income tot vandaag, cumulatief
+  // Forecast: vanaf vandaag forecast_amount uit pipeline + recurring income, geprojecteerd
+  const months = [];
+  for (let m = 0; m < 12; m++) {
+    const d = new Date(Number(yearStart.slice(0,4)), m, 1);
+    months.push({
+      key: d.toISOString().slice(0, 7),
+      label: d.toLocaleDateString('nl-NL', { month: 'short' }),
+    });
+  }
+  const todayMonth = today.slice(0, 7);
+  const splitIndex = Math.max(0, months.findIndex((m) => m.key === todayMonth));
+  let cumActual = 0;
+  let cumForecast = 0;
+  const series = months.map((m, i) => {
+    // Actual: ontvangen+gefactureerd income gevallen in deze maand (alleen tot huidige maand)
+    if (i <= splitIndex) {
+      const monthIncome = incomeThisYear
+        .filter((f) => f.date.slice(0, 7) === m.key && ['ontvangen','gefactureerd'].includes(f.payment_status))
+        .reduce((s, f) => s + Number(f.amount), 0);
+      cumActual += monthIncome;
+    }
+    // Forecast: vanaf huidige maand: actual + verwacht-income deze maand + maandelijkse run-rate vooruit
+    if (i < splitIndex) {
+      cumForecast = cumActual; // forecast lijn loopt nog mee met actual
+    } else if (i === splitIndex) {
+      cumForecast = cumActual;
+    } else {
+      // toekomstige maanden: alle income met date in die maand (verwacht/gefactureerd) + run-rate
+      const futureIncome = incomeThisYear
+        .filter((f) => f.date.slice(0, 7) === m.key)
+        .reduce((s, f) => s + Number(f.amount), 0);
+      // verspreide forecast over resterende maanden: forecast pipeline / aantal toekomst-maanden
+      const remainingMonths = 12 - splitIndex;
+      const pipelineSpread = forecastPipeline / remainingMonths;
+      cumForecast += futureIncome + pipelineSpread + recurringIncomeMonthly;
+    }
+    return { label: m.label, actual: cumActual, forecast: cumForecast };
+  });
+
+  const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+
+  // Aankomende taken (komende 14 dagen + overdue)
+  const upcoming = openTasks
+    .filter((t) => t.due_date)
+    .filter((t) => relDays(t.due_date) <= 14)
+    .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
+    .slice(0, 8);
+
+  // Pipeline overzicht (active projecten gegroepeerd per status)
+  const byStage = ACTIVE_STAGES.map((stage) => ({
+    stage,
+    label: PIPELINE_STAGES.find((s) => s.value === stage).label,
+    items: activeProjects.filter((p) => p.pipeline_status === stage),
+  }));
+
+  return `
     <section class="page-section">
       <div class="section-header">
         <div>
-          <h1>Management overview</h1>
-          <p>Een operationele besturingslaag over commercie, effort, kwaliteit en groei heen.</p>
+          <h1>Overview</h1>
+          <p>Stuur op pipeline, aankomende taken en cashflow.</p>
+        </div>
+        <a href="#/projecten/nieuw" class="button primary">+ Nieuw project</a>
+      </div>
+
+      <div class="metric-grid">
+        ${metricCard('Bookings YTD', fmtCurrency(bookings), `${fmtCurrency(ontvangen)} ontvangen`, 'success')}
+        ${metricCard('Forecast pipeline', fmtCurrency(forecastPipeline), 'verkennen → onderhandeling', 'warning')}
+        ${metricCard('Run-rate netto / maand', fmtCurrency(runRateNetto), `${fmtCurrency(recurringIncomeMonthly)} in · ${fmtCurrency(recurringExpenseMonthly)} uit`, runRateNetto >= 0 ? 'success' : 'danger')}
+      </div>
+
+      <section class="panel forecast-panel">
+        <div class="forecast-panel__head">
+          <div>
+            <span class="metric-label">Forecast 2026 — cumulatief</span>
+            <strong style="font-family:'Barlow';font-weight:900;color:var(--white);font-size:1.4rem;">${fmtCurrency(series[series.length - 1]?.forecast || 0)}</strong>
+            <span class="muted" style="font-size:.78rem;">eindjaar bij doorzetten pipeline</span>
+          </div>
+          <div style="display:flex;gap:14px;font-size:.72rem;color:var(--text-secondary);">
+            <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;"></span>Werkelijk</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#9B6FCF;display:inline-block;"></span>Forecast</span>
+            <span class="muted">${activeProjects.length} actief · ${openTasks.length} open${overdueTasks.length ? ` · <span style="color:#FF8FB6;">${overdueTasks.length} te laat</span>` : ''} · expense YTD ${fmtCurrency(expenseYtd)}</span>
+          </div>
+        </div>
+        ${dualLineChart({ series, actualKey: 'actual', forecastKey: 'forecast', splitIndex, ariaLabel: 'Cumulatieve revenue 2026' })}
+      </section>
+
+      <div class="layout-two">
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Aankomende taken</h2><p>Volgende 14 dagen + alles wat te laat is.</p></div></div>
+          ${table(
+            ['Taak','Project','Deadline','Prio'],
+            upcoming.map((t) => {
+              const proj = db.projects.find((p) => p.id === t.project_id);
+              const customer = proj ? customersById[proj.customer_id] : null;
+              return [
+                `<a href="#/projecten/${escapeHtml(t.project_id)}"><strong>${escapeHtml(t.title)}</strong></a>`,
+                `<span class="muted">${escapeHtml(customer?.name || '')}</span> · ${escapeHtml(proj?.name || '')}`,
+                badge(dueLabel(t.due_date), dueTone(t.due_date)),
+                badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
+              ];
+            }),
+            { compact: true },
+          )}
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Pipeline</h2><p>Actieve projecten per stage.</p></div></div>
+          <div class="signal-stack">
+            ${byStage.map((group) => `
+              <div class="signal-card">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+                  <strong>${escapeHtml(group.label)}</strong>
+                  <span class="muted">${group.items.length} · ${fmtCurrency(group.items.reduce((s, p) => s + Number(p.actual_amount || p.forecast_amount || p.value_amount || 0), 0))}</span>
+                </div>
+                <div>${group.items.map((p) => {
+                  const c = customersById[p.customer_id];
+                  return `<a href="#/projecten/${escapeHtml(p.id)}" class="muted" style="display:block;color:var(--text-primary);">${escapeHtml(c?.name || '')} · ${escapeHtml(p.name)}</a>`;
+                }).join('') || '<span class="muted">—</span>'}</div>
+              </div>`).join('')}
+          </div>
         </div>
       </div>
-      <div class="metric-grid">
-        ${metricCard('Totale omzet', formatCurrency(overview.totalRevenue), `Groei ${formatPercent(overview.revenueGrowth, 0)}`, overview.revenueGrowth >= 0 ? 'success' : 'danger')}
-        ${metricCard('Aantal klanten', formatNumber(overview.totalCustomers), `Klantgroei ${formatPercent(overview.customerGrowth, 0)}`, overview.customerGrowth >= 0 ? 'success' : 'danger')}
-        ${metricCard('Aantal afnames', formatNumber(overview.totalDeliveries), `Gem. deal ${formatCurrency(overview.avgDealValue)}`)}
-        ${metricCard('Totale uren', formatNumber(overview.totalHours, 1), `Uren / € ${formatNumber(overview.hoursPerRevenueEuro, 3)}`)}
-        ${metricCard('Omzet per uur', formatCurrency(overview.revenuePerHour), `Contribution ${formatPercent(overview.contributionMargin, 0)}`)}
-        ${metricCard('Kwaliteit', `${formatNumber(overview.avgRating, 1)} / 5`, `NPS ${formatNumber(overview.avgNps, 0)} · ${overview.reviewCount} reviews`, overview.avgRating >= 4.5 ? 'success' : overview.avgRating < 4.1 ? 'danger' : 'warning')}
-      </div>
-      <div class="layout-two">
-        <article class="panel">
-          <div class="panel-heading"><h2>Omzettrend</h2><p>Per maand binnen de huidige filtercontext.</p></div>
-          ${lineChart(overview.series, 'revenue')}
-        </article>
-        <article class="panel">
-          <div class="panel-heading"><h2>Uren vs omzet</h2><p>Quadrant om schaalbaarheid en frictie te spotten.</p></div>
-          ${scatterPlot(products, 'metrics.revenuePerHour', 'metrics.avgRating', { x: 'Omzet per uur', y: 'Reviewscore' })}
-        </article>
-      </div>
-      <div class="layout-two">
-        <article class="panel">
-          <div class="panel-heading"><h2>Platform breakdown</h2><p>Waar zit de commerciële performance?</p></div>
-          ${barChart(buildPlatformSeries(dashboard.products), 'revenue')}
-        </article>
-        <article class="panel">
-          <div class="panel-heading"><h2>Sturingssignalen</h2><p>Praktische business rules voor management.</p></div>
-          <div class="signal-stack">${signalCards.map((item) => `<div class="signal-card"><strong>${item.title}</strong><span>${item.body}</span></div>`).join('')}</div>
-        </article>
-      </div>
-      <article class="panel">
-        <div class="panel-heading"><h2>Top en bottom proposities</h2><p>Combineert omzet, efficiëntie, kwaliteit en signalen.</p></div>
-        ${table(
-          ['Product', 'Platform', 'Omzet', 'Uren', '€/uur', 'Review', 'Health', 'Signalen'],
-          [...dashboard.products].sort((a, b) => b.metrics.healthScore - a.metrics.healthScore).slice(0, 6).map((product) => [
-            `<a href="#/products/${product.id}">${product.name}</a>`,
-            product.platform,
-            formatCurrency(product.metrics.revenue),
-            formatNumber(product.metrics.hours, 1),
-            formatCurrency(product.metrics.revenuePerHour),
-            formatNumber(product.metrics.avgRating, 1),
-            `<span class="health-pill">${product.metrics.healthScore}</span>`,
-            renderSignalList(product.metrics.signals),
-          ]),
-        )}
-      </article>
     </section>`;
 }
 
-function buildPlatformSeries(products) {
-  const map = {};
-  products.forEach((product) => {
-    map[product.platform] ||= { label: product.platform, revenue: 0, hours: 0 };
-    map[product.platform].revenue += product.metrics.revenue;
-    map[product.platform].hours += product.metrics.hours;
-  });
-  return Object.values(map);
+function projectRow(p, customer, db) {
+  const openTasks = db.tasks.filter((t) => t.project_id === p.id && t.status !== 'done');
+  const overdue = openTasks.filter((t) => t.due_date && relDays(t.due_date) < 0);
+  const nextDueTask = openTasks.filter((t) => t.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+  const actual = Number(p.actual_amount || 0);
+  const forecast = Number(p.forecast_amount || 0);
+  const typeLabel = PRODUCT_TYPES.find((t) => t.value === p.product_type)?.label || p.product_type;
+  const prioLabel = PRIORITIES.find((pr) => pr.value === p.priority)?.label || p.priority;
+  return `
+    <a class="project-row" href="#/projecten/${escapeHtml(p.id)}">
+      <span class="project-row__status">${pipelineBadge(p.pipeline_status)}</span>
+      <span class="project-row__name">
+        <strong>${escapeHtml(p.name)}</strong>
+        <span class="muted">${escapeHtml(customer?.name || '—')} · ${escapeHtml(typeLabel)}${p.priority === 'high' ? ` · <span style="color:#FF8FB6;">${escapeHtml(prioLabel)} prio</span>` : ''}</span>
+      </span>
+      <span class="project-row__value">
+        ${actual ? `<strong>${fmtCurrency(actual)}</strong>` : ''}
+        ${forecast ? `<span class="muted${actual ? ' project-row__forecast' : ''}">${fmtCurrency(forecast)}${actual ? ' fc' : ' forecast'}</span>` : ''}
+        ${!actual && !forecast ? '<span class="muted">—</span>' : ''}
+      </span>
+      <span class="project-row__action">
+        ${p.next_action ? `${escapeHtml(p.next_action)}${p.next_action_date ? `<span class="muted"> · ${dueLabel(p.next_action_date)}</span>` : ''}` : '<span class="muted">—</span>'}
+      </span>
+      <span class="project-row__meta">
+        <span><strong>${openTasks.length}</strong> open</span>
+        ${overdue.length ? `<span style="color:#FF8FB6;">${overdue.length} te laat</span>` : ''}
+        ${nextDueTask ? `<span class="muted">${dueLabel(nextDueTask.due_date)}</span>` : ''}
+      </span>
+    </a>`;
 }
 
-function renderCustomersPage(dashboard) {
-  return html`
+function renderProjectenList(db) {
+  const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const filterStatus = appState.filters.pipeline_status || '';
+  const filterType = appState.filters.product_type || '';
+  const groupBy = appState.filters.group_by || 'status';
+  let projects = db.projects;
+  if (filterStatus) projects = projects.filter((p) => p.pipeline_status === filterStatus);
+  if (filterType) projects = projects.filter((p) => p.product_type === filterType);
+
+  let groups;
+  if (groupBy === 'klant') {
+    const byCustomer = new Map();
+    for (const p of projects) {
+      if (!byCustomer.has(p.customer_id)) byCustomer.set(p.customer_id, []);
+      byCustomer.get(p.customer_id).push(p);
+    }
+    groups = [...byCustomer.entries()]
+      .map(([customerId, items]) => {
+        const c = customersById[customerId];
+        return { key: customerId, label: c?.name || '—', sublabel: c?.type || '', items };
+      })
+      .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
+  } else {
+    const order = [...ACTIVE_STAGES, 'afgerond', 'on_hold', 'verloren'];
+    groups = order.map((stage) => {
+      const items = projects.filter((p) => p.pipeline_status === stage);
+      return { key: stage, label: PIPELINE_STAGES.find((s) => s.value === stage).label, sublabel: '', items };
+    }).filter((g) => g.items.length);
+  }
+
+  const totalForecast = projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
+  const totalActual = projects.reduce((s, p) => s + Number(p.actual_amount || 0), 0);
+
+  return `
     <section class="page-section">
-      <div class="section-header"><div><h1>Klantoverzicht</h1><p>Segmentatie, performance-indicatoren en doorklik naar detail.</p></div></div>
-      <article class="panel">
-        <div class="panel-heading"><h2>Klantportfolio</h2><p>Gebruik health, repeat behaviour en effort-efficiëntie om te prioriteren.</p></div>
-        ${table(
-          ['Klant', 'Type', 'Omzet', 'LTV', 'Uren', '€/uur', 'Review', 'Repeat', 'Health', 'Signalen'],
-          [...dashboard.customers].sort((a, b) => b.metrics.revenue - a.metrics.revenue).map((customer) => [
-            `<a href="#/customers/${customer.id}">${customer.name}</a>`,
-            `${customer.type} · ${customer.status}`,
-            formatCurrency(customer.metrics.revenue),
-            formatCurrency(customer.metrics.ltv),
-            formatNumber(customer.metrics.hours, 1),
-            formatCurrency(customer.metrics.revenuePerHour),
-            `${formatNumber(customer.metrics.avgRating, 1)} / 5`,
-            formatPercent(customer.metrics.repeatRate, 0),
-            `<span class="health-pill">${customer.metrics.healthScore}</span>`,
-            renderSignalList(customer.metrics.signals),
-          ]),
-        )}
-      </article>
+      <div class="section-header">
+        <div>
+          <h1>Projecten</h1>
+          <p>${projects.length} projecten · werkelijk ${fmtCurrency(totalActual)} · forecast ${fmtCurrency(totalForecast)}</p>
+        </div>
+        <a href="#/projecten/nieuw" class="button primary">+ Nieuw project</a>
+      </div>
+
+      <section class="panel">
+        <form id="project-filter" class="filter-grid">
+          <label><span>Groeperen op</span>
+            <select name="group_by">
+              <option value="status" ${groupBy === 'status' ? 'selected' : ''}>Pipeline status</option>
+              <option value="klant" ${groupBy === 'klant' ? 'selected' : ''}>Klant</option>
+            </select>
+          </label>
+          <label><span>Status</span>
+            <select name="pipeline_status">
+              <option value="">Alle</option>
+              ${PIPELINE_STAGES.map((s) => `<option value="${s.value}" ${filterStatus === s.value ? 'selected' : ''}>${s.label}</option>`).join('')}
+            </select>
+          </label>
+          <label><span>Type</span>
+            <select name="product_type">
+              <option value="">Alle</option>
+              ${PRODUCT_TYPES.map((t) => `<option value="${t.value}" ${filterType === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="submit" class="button primary">Toepassen</button>
+            <button type="button" class="button ghost" data-action="reset-project-filter">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      ${groups.map((group) => {
+        const groupActual = group.items.reduce((s, p) => s + Number(p.actual_amount || 0), 0);
+        const groupForecast = group.items.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
+        return `
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <h2>${escapeHtml(group.label)} ${group.sublabel ? `<span class="muted" style="font-weight:500;font-size:.7em;">· ${escapeHtml(group.sublabel)}</span>` : ''}</h2>
+                <p>${group.items.length} project(en) · werkelijk ${fmtCurrency(groupActual)}${groupForecast ? ` · forecast ${fmtCurrency(groupForecast)}` : ''}</p>
+              </div>
+            </div>
+            <div class="project-list">
+              <div class="project-list__head">
+                <span>Status</span>
+                <span>Project</span>
+                <span style="text-align:right;">Waarde</span>
+                <span>Volgende actie</span>
+                <span style="text-align:right;">Taken</span>
+              </div>
+              ${group.items.map((p) => projectRow(p, customersById[p.customer_id], db)).join('')}
+            </div>
+          </section>`;
+      }).join('')}
     </section>`;
 }
 
-function renderCustomerDetail(dashboard, customerId) {
-  const customer = dashboard.customers.find((item) => item.id === customerId);
-  if (!customer) return '<section class="page-section"><article class="panel"><h1>Klant niet gevonden</h1></article></section>';
-  const deliveries = dashboard.enriched.deliveries.filter((delivery) => delivery.customerId === customer.id);
-  return html`
+function renderProjectForm(db, project) {
+  const isNew = !project;
+  return `
     <section class="page-section">
-      <div class="section-header"><div><h1>${customer.name}</h1><p>${customer.type} · ${customer.industry} · ${customer.status}</p></div><a class="button ghost" href="#/customers">← Terug naar klanten</a></div>
-      <div class="metric-grid">
-        ${metricCard('Omzet', formatCurrency(customer.metrics.revenue), `${customer.metrics.deliveryCount} afnames`)}
-        ${metricCard('Totale uren', formatNumber(customer.metrics.hours, 1), `${formatCurrency(customer.metrics.revenuePerHour)}/uur`)}
-        ${metricCard('Kwaliteit', `${formatNumber(customer.metrics.avgRating, 1)} / 5`, `NPS ${formatNumber(customer.metrics.avgNps, 0)}`)}
-        ${metricCard('Customer health', formatNumber(customer.metrics.healthScore), `${formatPercent(customer.metrics.repeatRate, 0)} repeat rate`, customer.metrics.healthScore >= 70 ? 'success' : customer.metrics.healthScore < 50 ? 'danger' : 'warning')}
-      </div>
-      <div class="layout-two">
-        <article class="panel"><div class="panel-heading"><h2>Omzet & uren over tijd</h2><p>Performance per maand.</p></div>${lineChart(customer.metrics.series, 'revenue')}</article>
-        <article class="panel"><div class="panel-heading"><h2>Laatste signalen</h2><p>Risico- en expansiekansen.</p></div><div class="signal-stack">${customer.metrics.signals.map((signal) => `<div class="signal-card">${badge(signal)}</div>`).join('') || '<div class="empty-state">Geen uitzonderingen</div>'}</div></article>
-      </div>
-      <article class="panel">
-        <div class="panel-heading"><h2>Afgenomen proposities</h2><p>Met kwaliteit per levering.</p></div>
-        ${table(
-          ['Datum', 'Product', 'Omzet', 'Uren', 'Review', 'NPS', 'Contribution', 'Notities'],
-          deliveries.map((delivery) => [
-            delivery.date,
-            `<a href="#/products/${delivery.productId}">${delivery.product.name}</a>`,
-            formatCurrency(delivery.amount),
-            formatNumber(delivery.hours, 1),
-            formatNumber(delivery.avgRating, 1),
-            formatNumber(delivery.avgNps, 0),
-            formatCurrency(delivery.contribution),
-            escapeHtml(delivery.notes || ''),
-          ]),
-        )}
-      </article>
+      <div class="section-header"><div><h1>${isNew ? 'Nieuw project' : 'Project bewerken'}</h1></div></div>
+      <section class="panel">
+        <form id="project-form" class="stack-form">
+          <input type="hidden" name="id" value="${escapeHtml(project?.id || '')}" />
+          <label><span>Klant</span>
+            <select name="customer_id" required>
+              ${db.customers.map((c) => `<option value="${c.id}" ${project?.customer_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)} (${c.type})</option>`).join('')}
+            </select>
+          </label>
+          <label><span>Naam</span><input type="text" name="name" value="${escapeHtml(project?.name || '')}" required /></label>
+          <label><span>Beschrijving</span><textarea name="description">${escapeHtml(project?.description || '')}</textarea></label>
+          <div class="filter-grid">
+            <label><span>Pipeline status</span><select name="pipeline_status">${selectOptions(PIPELINE_STAGES, project?.pipeline_status || 'verkennen')}</select></label>
+            <label><span>Type</span><select name="product_type">${selectOptions(PRODUCT_TYPES, project?.product_type || 'other')}</select></label>
+            <label><span>Forecast (EUR)</span><input type="number" step="0.01" name="forecast_amount" value="${project?.forecast_amount || 0}" /></label>
+            <label><span>Werkelijk (EUR)</span><input type="number" step="0.01" name="actual_amount" value="${project?.actual_amount || 0}" /></label>
+            <label><span>Pricing model</span>
+              <select name="pricing_model">
+                <option value="project" ${project?.pricing_model === 'project' ? 'selected' : ''}>Project (vast)</option>
+                <option value="hourly" ${project?.pricing_model === 'hourly' ? 'selected' : ''}>Uurtarief</option>
+                <option value="recurring_monthly" ${project?.pricing_model === 'recurring_monthly' ? 'selected' : ''}>Maandelijks</option>
+              </select>
+            </label>
+            <label><span>Prio</span><select name="priority">${selectOptions(PRIORITIES, project?.priority || 'medium')}</select></label>
+            <label><span>Owner</span><input type="text" name="owner" value="${escapeHtml(project?.owner || 'Harmen')}" /></label>
+            <label><span>Start</span><input type="date" name="start_date" value="${project?.start_date || ''}" /></label>
+            <label><span>Geaccepteerd op</span><input type="date" name="accepted_date" value="${project?.accepted_date || ''}" /></label>
+            <label><span>Volgende actie datum</span><input type="date" name="next_action_date" value="${project?.next_action_date || ''}" /></label>
+          </div>
+          <label><span>Volgende actie</span><input type="text" name="next_action" value="${escapeHtml(project?.next_action || '')}" /></label>
+          <div class="admin-actions">
+            <button type="submit" class="button primary">Opslaan</button>
+            <a href="#/projecten" class="button ghost">Annuleren</a>
+          </div>
+        </form>
+      </section>
     </section>`;
 }
 
-function renderProductsPage(dashboard) {
-  return html`
-    <section class="page-section">
-      <div class="section-header"><div><h1>Productoverzicht</h1><p>Uniform productmodel over Academy, Technology en Company.</p></div></div>
-      <article class="panel">
-        <div class="panel-heading"><h2>Productperformance</h2><p>Vergelijk omzet, effort, kwaliteit en schaalbaarheid.</p></div>
-        ${table(
-          ['Product', 'Platform', 'Categorie', 'Omzet', 'Klanten', 'Afnames', 'Uren', '€/uur', 'Review', 'Health', 'Signalen'],
-          [...dashboard.products].sort((a, b) => b.metrics.revenue - a.metrics.revenue).map((product) => [
-            `<a href="#/products/${product.id}">${product.name}</a>`,
-            product.platform,
-            `${product.category} · ${product.subcategory}`,
-            formatCurrency(product.metrics.revenue),
-            formatNumber(product.metrics.customerCount),
-            formatNumber(product.metrics.deliveryCount),
-            formatNumber(product.metrics.hours, 1),
-            formatCurrency(product.metrics.revenuePerHour),
-            `${formatNumber(product.metrics.avgRating, 1)} / 5`,
-            `<span class="health-pill">${product.metrics.healthScore}</span>`,
-            renderSignalList(product.metrics.signals),
-          ]),
-        )}
-      </article>
-    </section>`;
-}
+function renderProjectDetail(db, projectId) {
+  const project = db.projects.find((p) => p.id === projectId);
+  if (!project) return `<section class="page-section"><div class="section-header"><div><h1>Project niet gevonden</h1></div></div></section>`;
+  const customer = db.customers.find((c) => c.id === project.customer_id);
+  const tasks = db.tasks.filter((t) => t.project_id === projectId);
+  const openTasks = tasks.filter((t) => t.status !== 'done');
+  const doneTasks = tasks.filter((t) => t.status === 'done');
+  const finance = db.finance.filter((f) => f.project_id === projectId);
+  const incomeTotal = finance.filter((f) => f.type === 'income').reduce((s, f) => s + Number(f.amount), 0);
 
-function renderProductDetail(dashboard, productId) {
-  const product = dashboard.products.find((item) => item.id === productId);
-  if (!product) return '<section class="page-section"><article class="panel"><h1>Product niet gevonden</h1></article></section>';
-  const deliveries = dashboard.enriched.deliveries.filter((delivery) => delivery.productId === product.id);
-  const recommendation = product.metrics.healthScore >= 75
-    ? 'Opschalen'
-    : product.metrics.avgRating >= 4.6 && product.metrics.revenue < 30000
-      ? 'Meer commercieel pushen'
-      : product.metrics.hours > 250 && product.metrics.avgRating >= 4.3
-        ? 'Productizen / standaardiseren'
-        : product.metrics.avgRating < 4.1
-          ? 'Verbeteren'
-          : 'Monitoren';
-  return html`
-    <section class="page-section">
-      <div class="section-header"><div><h1>${product.name}</h1><p>${product.platform} · ${product.category} · ${product.subcategory}</p></div><a class="button ghost" href="#/products">← Terug naar producten</a></div>
-      <div class="metric-grid">
-        ${metricCard('Omzet', formatCurrency(product.metrics.revenue), `${product.metrics.customerCount} klanten`)}
-        ${metricCard('Gem. dealwaarde', formatCurrency(product.metrics.avgDealValue), `${product.metrics.deliveryCount} afnames`)}
-        ${metricCard('Effort', formatNumber(product.metrics.hours, 1), `${formatNumber(product.metrics.avgHoursPerDelivery, 1)} uur / levering`)}
-        ${metricCard('Efficiëntie', formatCurrency(product.metrics.revenuePerHour), `Contribution ${formatPercent(product.metrics.contributionMargin, 0)}`)}
-        ${metricCard('Kwaliteit', `${formatNumber(product.metrics.avgRating, 1)} / 5`, `NPS ${formatNumber(product.metrics.avgNps, 0)}`)}
-        ${metricCard('Product health', formatNumber(product.metrics.healthScore), recommendation, product.metrics.healthScore >= 70 ? 'success' : product.metrics.healthScore < 50 ? 'danger' : 'warning')}
-      </div>
-      <div class="layout-two">
-        <article class="panel"><div class="panel-heading"><h2>Omzettrend</h2><p>Performance over tijd.</p></div>${lineChart(product.metrics.series, 'revenue')}</article>
-        <article class="panel"><div class="panel-heading"><h2>Kwaliteit vs omzet</h2><p>Leveringsniveau voor audit en productisering.</p></div>${scatterPlot(deliveries.map((delivery) => ({ ...delivery, name: delivery.customer.name })), 'amount', 'avgRating', { x: 'Omzet', y: 'Reviewscore' })}</article>
-      </div>
-      <article class="panel">
-        <div class="panel-heading"><h2>Leveringen voor dit product</h2><p>Onderliggende data blijft controleerbaar.</p></div>
-        ${table(
-          ['Datum', 'Klant', 'Omzet', 'Uren', '€/uur', 'Review', 'NPS', 'Contribution'],
-          deliveries.map((delivery) => [
-            delivery.date,
-            `<a href="#/customers/${delivery.customerId}">${delivery.customer.name}</a>`,
-            formatCurrency(delivery.amount),
-            formatNumber(delivery.hours, 1),
-            formatCurrency(delivery.revenuePerHour),
-            formatNumber(delivery.avgRating, 1),
-            formatNumber(delivery.avgNps, 0),
-            formatCurrency(delivery.contribution),
-          ]),
-        )}
-      </article>
-    </section>`;
-}
-
-function renderAuditPage(dashboard) {
-  return html`
-    <section class="page-section">
-      <div class="section-header"><div><h1>Delivery / auditlaag</h1><p>Delivery-, omzet-, uren- en kwaliteitsdata op transactieniveau.</p></div></div>
-      <article class="panel">
-        ${table(
-          ['Datum', 'Klant', 'Product', 'Platform', 'Omzet', 'Uren', 'Review', 'NPS', '€/uur', 'Contribution', 'Status'],
-          [...dashboard.enriched.deliveries].sort((a, b) => b.date.localeCompare(a.date)).map((delivery) => [
-            delivery.date,
-            `<a href="#/customers/${delivery.customerId}">${delivery.customer.name}</a>`,
-            `<a href="#/products/${delivery.productId}">${delivery.product.name}</a>`,
-            delivery.product.platform,
-            formatCurrency(delivery.amount),
-            formatNumber(delivery.hours, 1),
-            formatNumber(delivery.avgRating, 1),
-            formatNumber(delivery.avgNps, 0),
-            formatCurrency(delivery.revenuePerHour),
-            formatCurrency(delivery.contribution),
-            delivery.status,
-          ]),
-        )}
-      </article>
-    </section>`;
-}
-
-function renderQualityPage(dashboard) {
-  const riskyProducts = dashboard.products.filter((product) => product.metrics.signals.some((signal) => signal.key === 'high-revenue-low-satisfaction' || signal.key === 'low-satisfaction-high-hours'));
-  const hiddenGems = dashboard.products.filter((product) => product.metrics.signals.some((signal) => signal.key === 'low-revenue-high-satisfaction'));
-  return html`
-    <section class="page-section">
-      <div class="section-header"><div><h1>Quality & health monitor</h1><p>Combineert commerciële performance met klanttevredenheid en schaalbaarheid.</p></div></div>
-      <div class="layout-two">
-        <article class="panel"><div class="panel-heading"><h2>Quality quadrants</h2><p>Omzet versus reviewscore op productniveau.</p></div>${scatterPlot(dashboard.products.map((product) => ({ ...product, revenue: product.metrics.revenue, rating: product.metrics.avgRating })), 'revenue', 'rating', { x: 'Omzet', y: 'Reviewscore' })}</article>
-        <article class="panel"><div class="panel-heading"><h2>Reviewtrend</h2><p>Gemiddelde reviewscore per maand.</p></div>${lineChart(dashboard.overview.series, 'avgRating', '#8b5cf6')}</article>
-      </div>
-      <div class="layout-two">
-        <article class="panel"><div class="panel-heading"><h2>High revenue / low satisfaction</h2><p>Directe verbeterkandidaten.</p></div>${table(['Product', 'Omzet', 'Review', 'NPS', 'Uren', 'Signalen'], riskyProducts.map((product) => [product.name, formatCurrency(product.metrics.revenue), formatNumber(product.metrics.avgRating, 1), formatNumber(product.metrics.avgNps, 0), formatNumber(product.metrics.hours, 1), renderSignalList(product.metrics.signals)]), { compact: true })}</article>
-        <article class="panel"><div class="panel-heading"><h2>Low revenue / high satisfaction</h2><p>Opschaalkandidaten met product-market fit-signalen.</p></div>${table(['Product', 'Omzet', 'Review', 'Repeat', '€/uur', 'Signalen'], hiddenGems.map((product) => [product.name, formatCurrency(product.metrics.revenue), formatNumber(product.metrics.avgRating, 1), formatPercent(product.metrics.repeatRate, 0), formatCurrency(product.metrics.revenuePerHour), renderSignalList(product.metrics.signals)]), { compact: true })}</article>
-      </div>
-    </section>`;
-}
-
-function renderAdminPage(dashboard) {
-  const entitySelect = Object.keys(entityDefinitions).map((key) => `<option value="${key}">${key}</option>`).join('');
-  return html`
-    <section class="page-section">
-      <div class="section-header"><div><h1>Admin & ingestion</h1><p>Start simpel met handmatige invoer of CSV-import; schaal later door naar API-koppelingen.</p></div></div>
-      <div class="layout-two admin-grid">
-        <article class="panel">
-          <div class="panel-heading"><h2>Handmatige invoer</h2><p>Voeg records toe voor klanten, producten, leveringen, uren en reviews.</p></div>
-          <form id="record-form" class="stack-form">
-            <label><span>Entity</span><select name="table">${entitySelect}</select></label>
-            <label><span>Velden (JSON)</span><textarea name="payload" rows="12" placeholder='{"name":"Nieuwe klant","type":"Enterprise","status":"active"}'></textarea></label>
-            <button class="button primary" type="submit">Record opslaan</button>
-            <p class="muted">Verplichte velden voor bruikbare analyses: klant + product + datum + omzet voor deliveries, uren voor effort logs, rating voor reviews.</p>
-          </form>
-        </article>
-        <article class="panel">
-          <div class="panel-heading"><h2>CSV-import</h2><p>Gebruik exacte kolomnamen uit de tabeldefinities. Handig voor Excel-exporten.</p></div>
-          <form id="import-form" class="stack-form">
-            <label><span>Entity</span><select name="table">${entitySelect}</select></label>
-            <label><span>Mode</span><select name="mode"><option value="append">Append</option><option value="replace">Replace table</option></select></label>
-            <label><span>CSV</span><textarea name="csv" rows="12" placeholder="customerId,productId,date,status,amount\ncus_novarail,prd_speaking,2026-01-10,delivered,9500"></textarea></label>
-            <button class="button primary" type="submit">Importeer CSV</button>
-          </form>
-        </article>
-      </div>
-      <article class="panel">
-        <div class="panel-heading"><h2>Datamodel</h2><p>Normalized around products, customers, deliveries, effort logs and reviews.</p></div>
-        ${table(['Tabel', 'Doel', 'Verplichte velden'], Object.entries(entityDefinitions).map(([tableName, definition]) => [tableName, describeTable(tableName), definition.required.join(', ')]), { compact: true })}
-        <div class="admin-actions"><button class="button ghost" data-action="reset-database">Reset naar seeddata</button></div>
-      </article>
-      <article class="panel">
-        <div class="panel-heading"><h2>Huidige volumes</h2><p>Controleer of de dataset gevuld is voor je analyses.</p></div>
-        ${table(['Tabel', 'Aantal'], Object.keys(entityDefinitions).map((tableName) => [tableName, formatNumber(dashboard.enriched[tableName]?.length ?? dashboard.enriched[tableName]?.size ?? appState.db[tableName]?.length ?? 0)]), { compact: true })}
-      </article>
-    </section>`;
-}
-
-function describeTable(tableName) {
-  const descriptions = {
-    customers: 'Klantenkaart, account owner, type en status.',
-    products: 'Uniform productmodel over alle platformen en proposities.',
-    deliveries: 'Commerciële leveringen / transacties met omzet op deliveryniveau.',
-    effortLogs: 'Lightweight urenregistratie per levering, klant en product.',
-    reviews: 'Kwaliteit per levering zodat analyses zuiver blijven.',
-  };
-  return descriptions[tableName] || '';
-}
-
-function renderNavigation() {
-  const route = parseRoute();
-  const navItems = [
-    ['/', 'Overview'],
-    ['/customers', 'Klanten'],
-    ['/products', 'Producten'],
-    ['/audit', 'Audit'],
-    ['/quality', 'Quality'],
-    ['/admin', 'Admin'],
+  const taskRow = (t) => [
+    `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" ${t.status === 'done' ? 'checked' : ''} />`,
+    `<strong style="${t.status === 'done' ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted">${escapeHtml(t.description)}</div>` : ''}`,
+    badge(TASK_STATUSES.find((s) => s.value === t.status)?.label || t.status, t.status === 'done' ? 'success' : t.status === 'blocked' ? 'danger' : t.status === 'in_progress' ? 'warning' : 'info'),
+    t.due_date ? badge(dueLabel(t.due_date), dueTone(t.due_date)) : '<span class="muted">—</span>',
+    badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
+    escapeHtml(t.owner || ''),
+    `<button type="button" class="button ghost" data-action="delete-task" data-task-id="${escapeHtml(t.id)}">×</button>`,
   ];
-  return `<nav class="side-nav">${navItems.map(([path, label]) => `<a class="${route.path === path || (path !== '/' && route.path.startsWith(path)) ? 'active' : ''}" href="#${path}">${label}</a>`).join('')}</nav>`;
+
+  return `
+    <section class="page-section">
+      <div class="section-header">
+        <div>
+          <p class="muted"><a href="#/projecten">← Projecten</a> · <a href="#/klanten/${escapeHtml(project.customer_id)}">${escapeHtml(customer?.name || '')}</a></p>
+          <h1>${escapeHtml(project.name)}</h1>
+          <p>${escapeHtml(project.description || '')}</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-direction:column;align-items:flex-end;">
+          ${pipelineBadge(project.pipeline_status)}
+          <div style="display:flex;gap:8px;">
+            <a href="#/projecten/${escapeHtml(project.id)}/bewerken" class="button ghost">Bewerken</a>
+            <button type="button" class="button ghost" data-action="delete-project" data-id="${escapeHtml(project.id)}" data-name="${escapeHtml(project.name)}" style="border-color:rgba(194,80,128,.5);color:#FF8FB6;">Verwijderen</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-grid">
+        ${metricCard('Forecast', fmtCurrency(project.forecast_amount), project.pricing_model === 'recurring_monthly' ? '/ maand' : project.pricing_model, 'warning')}
+        ${metricCard('Werkelijk', fmtCurrency(project.actual_amount), 'goedgekeurd / opgeleverd', 'success')}
+        ${metricCard('Open taken', openTasks.length, `${doneTasks.length} klaar`)}
+        ${metricCard('Income geboekt', fmtCurrency(incomeTotal), `${finance.length} regel(s)`)}
+        ${metricCard('Volgende actie', project.next_action_date ? dueLabel(project.next_action_date) : '—', project.next_action || '', dueTone(project.next_action_date))}
+      </div>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div><h2>Taken</h2><p>${openTasks.length} open · ${doneTasks.length} klaar</p></div>
+          <button type="button" class="button primary" data-action="add-task" data-project-id="${escapeHtml(project.id)}">+ Taak</button>
+        </div>
+        ${table(['','Taak','Status','Deadline','Prio','Owner',''], [...openTasks, ...doneTasks].map(taskRow), { compact: true })}
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading"><div><h2>Finance</h2><p>Income gekoppeld aan dit project.</p></div></div>
+        ${table(
+          ['Datum','Beschrijving','Bedrag','Categorie','Status'],
+          finance.map((f) => [
+            fmtDate(f.date),
+            escapeHtml(f.description),
+            (f.type === 'expense' ? '-' : '+') + fmtCurrency(f.amount),
+            escapeHtml(f.category || ''),
+            escapeHtml(f.factuur_status || ''),
+          ]),
+          { compact: true },
+        )}
+      </section>
+    </section>`;
 }
 
-function renderPage(dashboard) {
-  const route = parseRoute();
-  if (route.parts[0] === 'customers' && route.parts[1]) return renderCustomerDetail(dashboard, route.parts[1]);
-  if (route.parts[0] === 'products' && route.parts[1]) return renderProductDetail(dashboard, route.parts[1]);
+function renderTaken(db) {
+  const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const projectsById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
+  const open = db.tasks.filter((t) => t.status !== 'done');
+  const overdue = open.filter((t) => relDays(t.due_date) !== null && relDays(t.due_date) < 0).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  const today = open.filter((t) => relDays(t.due_date) === 0);
+  const week = open.filter((t) => { const d = relDays(t.due_date); return d !== null && d > 0 && d <= 7; }).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  const later = open.filter((t) => { const d = relDays(t.due_date); return d === null || d > 7; });
+
+  const renderGroup = (title, items, tone) => `
+    <section class="panel">
+      <div class="panel-heading"><div><h2>${title}</h2><p>${items.length} ta${items.length === 1 ? 'ak' : 'ken'}</p></div></div>
+      ${table(
+        ['','Taak','Project','Deadline','Prio'],
+        items.map((t) => {
+          const proj = projectsById[t.project_id];
+          const cust = proj ? customersById[proj.customer_id] : null;
+          return [
+            `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" />`,
+            `<strong>${escapeHtml(t.title)}</strong>`,
+            `<a href="#/projecten/${escapeHtml(t.project_id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj?.name || '')}</a>`,
+            t.due_date ? badge(dueLabel(t.due_date), tone) : '<span class="muted">—</span>',
+            badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
+          ];
+        }),
+        { compact: true },
+      )}
+    </section>`;
+
+  return `
+    <section class="page-section">
+      <div class="section-header"><div><h1>Taken</h1><p>Alles wat openstaat, gegroepeerd op urgentie.</p></div></div>
+      ${overdue.length ? renderGroup(`Te laat (${overdue.length})`, overdue, 'danger') : ''}
+      ${today.length ? renderGroup('Vandaag', today, 'warning') : ''}
+      ${week.length ? renderGroup('Deze week', week, 'warning') : ''}
+      ${later.length ? renderGroup('Later / zonder deadline', later, 'info') : ''}
+      ${!open.length ? `<section class="panel"><p class="empty-state">Geen open taken.</p></section>` : ''}
+    </section>`;
+}
+
+function renderFinance(db) {
+  const incomes = db.finance.filter((f) => f.type === 'income');
+  const expenses = db.finance.filter((f) => f.type === 'expense');
+  const incomeTotal = incomes.reduce((s, f) => s + Number(f.amount), 0);
+  const expenseTotal = expenses.reduce((s, f) => s + Number(f.amount), 0);
+  const ontvangen = incomes.filter((f) => f.payment_status === 'ontvangen').reduce((s, f) => s + Number(f.amount), 0);
+  const gefactureerd = incomes.filter((f) => f.payment_status === 'gefactureerd').reduce((s, f) => s + Number(f.amount), 0);
+  const verwacht = incomes.filter((f) => f.payment_status === 'verwacht').reduce((s, f) => s + Number(f.amount), 0);
+
+  // Per maand Q1 2026 expenses
+  const byMonth = {};
+  for (const f of db.finance) {
+    if (!f.date || f.date < '2026-01-01' || f.date > '2026-12-31') continue;
+    const m = f.date.slice(0, 7);
+    byMonth[m] ||= { month: m, income: 0, expense: 0 };
+    byMonth[m][f.type] += Number(f.amount);
+  }
+  const monthSeries = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month))
+    .map((m) => ({ label: m.month.slice(5), income: m.income, expense: m.expense }));
+
+  // Per categorie expenses
+  const byCat = {};
+  for (const f of expenses) {
+    const k = f.category || 'Overig';
+    byCat[k] ||= { label: k, value: 0 };
+    byCat[k].value += Number(f.amount);
+  }
+  const catSeries = Object.values(byCat).sort((a, b) => b.value - a.value);
+
+  const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const projectsById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
+
+  return `
+    <section class="page-section">
+      <div class="section-header"><div><h1>Finance</h1><p>Income + expenses, gekoppeld aan projecten waar mogelijk.</p></div></div>
+
+      <div class="metric-grid">
+        ${metricCard('Ontvangen', fmtCurrency(ontvangen), 'income met status ontvangen', 'success')}
+        ${metricCard('Gefactureerd', fmtCurrency(gefactureerd), 'wacht op betaling', 'warning')}
+        ${metricCard('Verwacht', fmtCurrency(verwacht), 'forecast / nog te factureren', 'default')}
+        ${metricCard('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`, 'warning')}
+        ${metricCard('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger')}
+      </div>
+
+      <div class="layout-two">
+        <section class="panel">
+          <div class="panel-heading"><div><h2>2026 per maand</h2></div></div>
+          ${barChart(monthSeries, 'expense', '#9B6FCF', fmtCurrency)}
+          <p class="muted">Expense per maand (paars). Income volgt zodra abbo's en facturen geboekt zijn.</p>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><div><h2>Expenses per categorie</h2></div></div>
+          ${table(
+            ['Categorie','Bedrag'],
+            catSeries.map((c) => [escapeHtml(c.label), fmtCurrency(c.value)]),
+            { compact: true },
+          )}
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-heading"><div><h2>Alle regels</h2><p>${db.finance.length} totaal</p></div></div>
+        ${table(
+          ['Datum','Type','Beschrijving','Vendor','Bedrag','Categorie','Project','Betaalstatus'],
+          db.finance.map((f) => {
+            const proj = f.project_id ? projectsById[f.project_id] : null;
+            const cust = proj ? customersById[proj.customer_id] : null;
+            return [
+              fmtDate(f.date),
+              badge(f.type === 'income' ? 'in' : 'uit', f.type === 'income' ? 'success' : 'warning'),
+              escapeHtml(f.description),
+              escapeHtml(f.vendor || ''),
+              (f.type === 'expense' ? '-' : '+') + fmtCurrency(f.amount),
+              escapeHtml(f.category || ''),
+              proj ? `<a href="#/projecten/${escapeHtml(proj.id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj.name)}</a>` : '<span class="muted">—</span>',
+              f.type === 'income'
+                ? `<select data-action="payment-status" data-id="${escapeHtml(f.id)}">
+                     ${['verwacht','gefactureerd','ontvangen','afgeschreven'].map((v) => `<option value="${v}" ${f.payment_status === v ? 'selected' : ''}>${v}</option>`).join('')}
+                   </select>`
+                : escapeHtml(f.factuur_status || ''),
+            ];
+          }),
+          { compact: true },
+        )}
+      </section>
+    </section>`;
+}
+
+function renderKlanten(db) {
+  return `
+    <section class="page-section">
+      <div class="section-header"><div><h1>Klanten & samenwerkingen</h1></div></div>
+      <section class="panel">
+        ${table(
+          ['Naam','Type','Industry','Status','Projecten','Werkelijk','Forecast'],
+          db.customers
+            .map((c) => ({
+              c,
+              projects: db.projects.filter((p) => p.customer_id === c.id),
+            }))
+            .map(({ c, projects }) => {
+              const actual = projects.reduce((s, p) => s + Number(p.actual_amount || 0), 0);
+              const forecast = projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
+              return { c, projects, actual, forecast };
+            })
+            .sort((a, b) => (b.actual + b.forecast) - (a.actual + a.forecast))
+            .map(({ c, projects, actual, forecast }) => [
+              `<a href="#/klanten/${escapeHtml(c.id)}"><strong>${escapeHtml(c.name)}</strong></a>`,
+              badge(c.type, c.type === 'klant' ? 'success' : c.type === 'samenwerking' ? 'info' : 'warning'),
+              escapeHtml(c.industry || ''),
+              badge(c.status, c.status === 'active' ? 'success' : 'default'),
+              `${projects.length}`,
+              actual ? `<strong>${fmtCurrency(actual)}</strong>` : '<span class="muted">—</span>',
+              forecast ? fmtCurrency(forecast) : '<span class="muted">—</span>',
+            ]),
+        )}
+      </section>
+    </section>`;
+}
+
+function renderKlantDetail(db, customerId) {
+  const customer = db.customers.find((c) => c.id === customerId);
+  if (!customer) return `<section class="page-section"><h1>Klant niet gevonden</h1></section>`;
+  const projects = db.projects.filter((p) => p.customer_id === customerId);
+  const finance = db.finance.filter((f) => f.project_id && projects.some((p) => p.id === f.project_id));
+  const income = finance.filter((f) => f.type === 'income').reduce((s, f) => s + Number(f.amount), 0);
+  return `
+    <section class="page-section">
+      <div class="section-header">
+        <div>
+          <p class="muted"><a href="#/klanten">← Klanten</a></p>
+          <h1>${escapeHtml(customer.name)}</h1>
+          <p>${escapeHtml(customer.notes || '')}</p>
+        </div>
+        <div>${badge(customer.type, 'info')}</div>
+      </div>
+      <div class="metric-grid">
+        ${metricCard('Projecten', projects.length, '', 'success')}
+        ${metricCard('Werkelijk', fmtCurrency(projects.reduce((s, p) => s + Number(p.actual_amount || 0), 0)), 'goedgekeurd / opgeleverd', 'success')}
+        ${metricCard('Forecast', fmtCurrency(projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0)), 'in pipeline', 'warning')}
+        ${metricCard('Income geboekt', fmtCurrency(income))}
+      </div>
+      <section class="panel">
+        <div class="panel-heading"><div><h2>Projecten</h2></div></div>
+        ${table(
+          ['Project','Status','Type','Waarde','Volgende actie'],
+          projects.map((p) => [
+            `<a href="#/projecten/${escapeHtml(p.id)}"><strong>${escapeHtml(p.name)}</strong></a>`,
+            pipelineBadge(p.pipeline_status),
+            badge(PRODUCT_TYPES.find((t) => t.value === p.product_type)?.label || p.product_type, 'info'),
+            projectValueCell(p),
+            p.next_action ? `${escapeHtml(p.next_action)}${p.next_action_date ? ` · ${fmtDate(p.next_action_date)}` : ''}` : '<span class="muted">—</span>',
+          ]),
+          { compact: true },
+        )}
+      </section>
+    </section>`;
+}
+
+// ============== Shell ==============
+
+function renderNavigation(route) {
+  const items = [
+    ['/', 'Overview'],
+    ['/projecten', 'Projecten'],
+    ['/taken', 'Taken'],
+    ['/finance', 'Finance'],
+    ['/klanten', 'Klanten'],
+  ];
+  return `<nav class="side-nav">${items.map(([path, label]) => {
+    const active = route.path === path || (path !== '/' && route.path.startsWith(path));
+    return `<a class="${active ? 'active' : ''}" href="#${path}">${label}</a>`;
+  }).join('')}</nav>`;
+}
+
+function renderPage(db, route) {
+  if (route.parts[0] === 'projecten' && route.parts[1] === 'nieuw') return renderProjectForm(db, null);
+  if (route.parts[0] === 'projecten' && route.parts[1] && route.parts[2] === 'bewerken') {
+    return renderProjectForm(db, db.projects.find((p) => p.id === route.parts[1]));
+  }
+  if (route.parts[0] === 'projecten' && route.parts[1]) return renderProjectDetail(db, route.parts[1]);
+  if (route.parts[0] === 'klanten' && route.parts[1]) return renderKlantDetail(db, route.parts[1]);
   switch (route.path) {
-    case '/customers': return renderCustomersPage(dashboard);
-    case '/products': return renderProductsPage(dashboard);
-    case '/audit': return renderAuditPage(dashboard);
-    case '/quality': return renderQualityPage(dashboard);
-    case '/admin': return renderAdminPage(dashboard);
-    default: return renderOverview(dashboard);
+    case '/projecten': return renderProjectenList(db);
+    case '/taken':     return renderTaken(db);
+    case '/finance':   return renderFinance(db);
+    case '/klanten':   return renderKlanten(db);
+    default:           return renderOverview(db);
   }
 }
 
 function attachEvents() {
-  document.getElementById('filters-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    appState.filters = Object.fromEntries(formData.entries());
+  document.getElementById('project-filter')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    appState.filters = Object.fromEntries(data.entries());
     renderApp();
   });
-
-  document.querySelector('[data-action="reset-filters"]')?.addEventListener('click', () => {
-    appState.filters = { ...defaultFilters };
-    renderApp();
+  document.querySelector('[data-action="reset-project-filter"]')?.addEventListener('click', () => {
+    appState.filters = {}; renderApp();
   });
 
-  document.getElementById('record-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const table = String(formData.get('table'));
+  document.querySelectorAll('[data-action="toggle-task"]').forEach((checkbox) => {
+    checkbox.addEventListener('change', async (e) => {
+      const id = e.target.dataset.taskId;
+      const task = getDatabase().tasks.find((t) => t.id === id);
+      if (!task) return;
+      task.status = e.target.checked ? 'done' : 'open';
+      await upsertTask(task);
+    });
+  });
+
+  document.querySelector('[data-action="logout"]')?.addEventListener('click', () => logout());
+
+  document.querySelector('[data-action="delete-project"]')?.addEventListener('click', async (e) => {
+    const id = e.currentTarget.dataset.id;
+    const name = e.currentTarget.dataset.name;
+    if (!confirm(`Project "${name}" verwijderen? Taken horen ook verwijderd, finance-regels worden losgekoppeld.`)) return;
     try {
-      const payload = normalizeRecord(JSON.parse(String(formData.get('payload') || '{}')));
-      payload.id ||= nextId(entityDefinitions[table].prefix);
-      const validation = validateRecord(table, payload);
-      if (!validation.valid) throw new Error(`Ontbrekende velden: ${validation.missing.join(', ')}`);
-      upsertRecord(table, payload);
-      event.currentTarget.reset();
-      alert('Record opgeslagen.');
-    } catch (error) {
-      alert(`Opslaan mislukt: ${error.message}`);
+      await deleteProject(id);
+      window.location.hash = '#/projecten';
+    } catch (err) {
+      alert('Verwijderen mislukt: ' + err.message);
     }
   });
 
-  document.getElementById('import-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const table = String(formData.get('table'));
-    const mode = String(formData.get('mode'));
-    try {
-      const records = parseCsv(String(formData.get('csv') || ''))
-        .map(normalizeRecord)
-        .map((record) => ({ id: record.id || nextId(entityDefinitions[table].prefix), ...record }));
-      const invalid = records.map((record, index) => ({ index, ...validateRecord(table, record) })).filter((item) => !item.valid);
-      if (invalid.length) throw new Error(`Invalid rows: ${invalid.map((item) => `${item.index + 2} (${item.missing.join(', ')})`).join('; ')}`);
-      importRecords(table, records, mode);
-      alert(`${records.length} records geïmporteerd.`);
-    } catch (error) {
-      alert(`Import mislukt: ${error.message}`);
-    }
+  document.querySelectorAll('[data-action="payment-status"]').forEach((sel) => {
+    sel.addEventListener('change', async (e) => {
+      const id = e.target.dataset.id;
+      const entry = getDatabase().finance.find((f) => f.id === id);
+      if (!entry) return;
+      entry.payment_status = e.target.value;
+      await upsertFinance(entry);
+    });
   });
 
-  document.querySelector('[data-action="reset-database"]')?.addEventListener('click', () => {
-    if (confirm('Weet je zeker dat je alle lokale wijzigingen wilt wissen?')) {
-      resetDatabase();
+  document.querySelectorAll('[data-action="delete-task"]').forEach((button) => {
+    button.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.taskId;
+      if (!confirm('Taak verwijderen?')) return;
+      await deleteTask(id);
+    });
+  });
+
+  document.querySelector('[data-action="add-task"]')?.addEventListener('click', async (e) => {
+    const projectId = e.currentTarget.dataset.projectId;
+    const title = prompt('Taak titel?');
+    if (!title) return;
+    const due = prompt('Deadline (YYYY-MM-DD, leeg = geen)?', '');
+    const priority = prompt('Prio (high/medium/low)?', 'medium');
+    await upsertTask({
+      id: nextId('tsk'),
+      project_id: projectId,
+      title,
+      description: '',
+      status: 'open',
+      priority: ['high','medium','low'].includes(priority) ? priority : 'medium',
+      due_date: due || null,
+      owner: 'Harmen',
+    });
+  });
+
+  document.getElementById('project-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    if (!data.id) data.id = nextId('prj');
+    data.forecast_amount = Number(data.forecast_amount || 0);
+    data.actual_amount = Number(data.actual_amount || 0);
+    data.value_amount = data.actual_amount || data.forecast_amount;
+    ['start_date','accepted_date','next_action_date','end_date'].forEach((k) => { if (!data[k]) data[k] = null; });
+    try {
+      await upsertProject(data);
+      window.location.hash = `#/projecten/${data.id}`;
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
     }
   });
 }
 
 export function renderApp() {
+  const db = getDatabase();
+  const route = parseRoute();
   const root = document.getElementById('app');
-  const dashboard = currentDashboard();
   root.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-block">
           <span class="eyebrow">Internal operating system</span>
-          <h1>AI Company Dashboard</h1>
-          <p>Stuur op omzet, effort, kwaliteit, klantwaarde en productperformance.</p>
+          <h1>Morgen Dashboard</h1>
+          <p>Pipeline, taken en cashflow op één plek.</p>
         </div>
-        ${renderNavigation()}
+        ${renderNavigation(route)}
+        ${db.error ? `<p class="muted" style="margin-top:24px;color:var(--tone-danger);">⚠ ${escapeHtml(db.error)}</p>` : ''}
+        <button type="button" class="button ghost" data-action="logout" style="margin-top:auto;width:100%;">Uitloggen</button>
       </aside>
       <main class="main-content">
-        ${renderFilters(dashboard)}
-        ${renderPage(dashboard)}
+        ${db.loading ? '<section class="panel"><p class="empty-state">Data laden uit Supabase…</p></section>' : renderPage(db, route)}
       </main>
     </div>`;
   attachEvents();
 }
+

@@ -1,4 +1,5 @@
-import { formatCurrency, formatNumber } from '../domain/metrics.js';
+const formatCurrency = (value) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value || 0);
+const formatNumber = (value, digits = 0) => new Intl.NumberFormat('nl-NL', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value || 0);
 
 function getValue(point, key) {
   return key.split('.').reduce((value, part) => value?.[part], point) || 0;
@@ -29,6 +30,53 @@ export function lineChart(series, key, color = '#2563eb') {
     return `<line x1="${padding}" x2="${width - padding}" y1="${y}" y2="${y}" class="chart-grid"></line>`;
   }).join('');
   return svg(width, height, `${grid}<path d="${path}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>${circles}${labels}`);
+}
+
+export function dualLineChart({ series, actualKey, forecastKey, splitIndex, ariaLabel = '' }) {
+  if (!series.length) return '<div class="empty-state">Geen data beschikbaar.</div>';
+  const width = 720;
+  const height = 140;
+  const padTop = 12, padBottom = 22, padX = 8;
+  const allValues = series.flatMap((p) => [getValue(p, actualKey), getValue(p, forecastKey)]);
+  const max = Math.max(...allValues, 1);
+  const stepX = (width - padX * 2) / Math.max(series.length - 1, 1);
+
+  const project = (key) => series.map((point, i) => ({
+    ...point,
+    x: padX + i * stepX,
+    y: height - padBottom - (getValue(point, key) / max) * (height - padTop - padBottom),
+    v: getValue(point, key),
+  }));
+  const actualPts = project(actualKey).slice(0, splitIndex + 1);
+  const forecastPts = project(forecastKey).slice(splitIndex);
+
+  const path = (pts) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const area = (pts) => {
+    if (!pts.length) return '';
+    const baseline = height - padBottom;
+    return `M ${pts[0].x.toFixed(1)} ${baseline} ` +
+      pts.map((p) => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') +
+      ` L ${pts[pts.length - 1].x.toFixed(1)} ${baseline} Z`;
+  };
+  const grid = [0.5, 1].map((t) => {
+    const y = height - padBottom - t * (height - padTop - padBottom);
+    return `<line x1="${padX}" x2="${width - padX}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" class="chart-grid"></line>`;
+  }).join('');
+  const labels = series.map((p, i) => i % 2 === 0 ? `<text x="${(padX + i * stepX).toFixed(1)}" y="${height - 6}" text-anchor="middle" class="chart-label">${p.label}</text>` : '').join('');
+
+  return `<svg viewBox="0 0 ${width} ${height}" class="chart-svg" role="img" aria-label="${ariaLabel}" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="chartActualFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#D8FE56" stop-opacity=".25"/>
+        <stop offset="100%" stop-color="#D8FE56" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    ${grid}
+    ${labels}
+    <path d="${area(actualPts)}" fill="url(#chartActualFill)" stroke="none"></path>
+    <path d="${path(forecastPts)}" fill="none" stroke="#9B6FCF" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" opacity="0.85"></path>
+    <path d="${path(actualPts)}" fill="none" stroke="#D8FE56" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+  </svg>`;
 }
 
 export function barChart(series, key, color = '#14b8a6', formatter = formatCurrency) {

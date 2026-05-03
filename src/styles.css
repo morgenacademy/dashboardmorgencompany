@@ -92,6 +92,7 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
   -webkit-backdrop-filter: var(--glass-blur);
   position: sticky; top: 0; height: 100vh;
   color: var(--text-primary);
+  display: flex; flex-direction: column;
 }
 
 .brand-block { margin-bottom: 8px; }
@@ -232,6 +233,114 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
 }
 .metric-meta { color: var(--text-muted); font-size: .82rem; }
 
+/* ================= Forecast panel ================= */
+
+.forecast-panel { padding: 18px 22px; }
+.forecast-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.forecast-panel__head > div:first-child {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.forecast-panel .chart-svg { max-height: 140px; }
+
+/* ================= Project list (table-like) ================= */
+
+.project-list {
+  display: grid;
+  gap: 6px;
+}
+.project-list__head,
+.project-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 2.4fr) minmax(110px, .9fr) minmax(0, 2fr) minmax(140px, .9fr);
+  gap: 18px;
+  align-items: center;
+}
+.project-list__head {
+  padding: 6px 18px 8px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(155,111,207,.18);
+  margin-bottom: 4px;
+}
+.project-row {
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--card-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.14);
+  transition: var(--transition);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.project-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,.32);
+  box-shadow: var(--shadow-hover), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.project-row__status { display: flex; }
+.project-row__status .badge { margin: 0; }
+.project-row__name {
+  display: grid; gap: 2px; min-width: 0;
+}
+.project-row__name strong {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--white);
+  line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.project-row__name .muted { font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-row__value {
+  display: grid; gap: 2px;
+  text-align: right;
+  white-space: nowrap;
+  font-family: 'Barlow', sans-serif;
+  font-size: 1rem;
+}
+.project-row__value strong { font-weight: 800; color: var(--white); }
+.project-row__forecast { font-size: .78rem; }
+.project-row__action {
+  font-size: .85rem;
+  color: var(--text-primary);
+  background: rgba(216,254,86,.08);
+  border-left: 3px solid var(--accent);
+  padding: 6px 10px;
+  border-radius: 8px;
+  min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.project-row__action:has(.muted:only-child) { background: transparent; border-left: none; padding: 0; }
+.project-row__meta {
+  display: flex; gap: 10px;
+  justify-content: flex-end;
+  font-size: .78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1100px) {
+  .project-list__head { display: none; }
+  .project-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .project-row__value, .project-row__meta { justify-content: flex-start; text-align: left; }
+}
+
 /* ================= Two column layout ================= */
 
 .layout-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
@@ -255,16 +364,43 @@ button, input, select, textarea { font: inherit; font-family: 'Barlow', sans-ser
 .filter-grid input, .filter-grid select,
 .stack-form textarea, .stack-form select, .stack-form input {
   width: 100%;
-  padding: 12px 14px;
+  height: 44px;
+  padding: 0 14px;
   border-radius: 14px;
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
   color: var(--white);
   font-size: .95rem;
+  line-height: 1.2;
   letter-spacing: 0;
   text-transform: none;
   font-weight: 500;
   transition: var(--transition);
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: 'Barlow', sans-serif;
+}
+.filter-grid input[type="date"], .stack-form input[type="date"] {
+  padding-right: 10px;
+}
+.filter-grid input[type="date"]::-webkit-calendar-picker-indicator,
+.stack-form input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(.85);
+  opacity: .7;
+  cursor: pointer;
+}
+.filter-grid select, .stack-form select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%), linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+}
+.stack-form textarea {
+  height: auto;
+  padding: 12px 14px;
+  line-height: 1.5;
 }
 .filter-grid input::placeholder,
 .stack-form input::placeholder,
@@ -290,15 +426,18 @@ textarea { resize: vertical; min-height: 130px; }
 
 .button {
   display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
-  padding: .85rem 1.5rem;
+  height: 44px;
+  padding: 0 1.5rem;
   border-radius: var(--radius);
   border: 1px solid transparent;
   font-family: 'Barlow', sans-serif;
   font-weight: 700;
   font-size: .9rem;
+  line-height: 1;
   letter-spacing: .02em;
   cursor: pointer;
   transition: var(--transition);
+  box-sizing: border-box;
 }
 .button.primary {
   background: linear-gradient(135deg, var(--accent), #b8e040);
