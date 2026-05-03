@@ -64,13 +64,10 @@ const COMMITTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
 
 function ownerShares(owner = '') {
   const o = owner.toLowerCase();
-  const hasKarin = o.includes('karin');
-  const hasHarmen = o.includes('harmen');
-  const hasDaan = o.includes('daan');
   const people = [];
-  if (hasKarin) people.push('Karin');
-  if (hasHarmen) people.push('Harmen');
-  if (hasDaan) people.push('Daan');
+  if (o.includes('karin'))    people.push('Karin');
+  if (o.includes('harmen'))   people.push('Harmen');
+  if (o.includes('danielle')) people.push('Danielle');
   if (!people.length) return {};
   const share = 1 / people.length;
   return Object.fromEntries(people.map((p) => [p, share]));
@@ -126,9 +123,9 @@ function dueTone(dateStr) {
   return 'info';
 }
 
-const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null };
+const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null, editingCustomer: null };
 
-const OWNER_OPTIONS = ['Harmen', 'Karin', 'Daan', 'Harmen & Karin', 'Harmen & Daan', 'Karin & Daan'];
+const OWNER_OPTIONS = ['Harmen', 'Karin', 'Danielle', 'Harmen & Karin', 'Harmen & Danielle', 'Karin & Danielle'];
 
 subscribe(() => renderApp());
 
@@ -306,7 +303,7 @@ function renderOverview(db) {
   // 3) Gefactureerd: factuur uit, klant moet betalen
   // 4) Ontvangen: geld binnen
   const splitProjectsByOwner = (projects, amountKey) => {
-    const tally = { Karin: 0, Harmen: 0, Daan: 0, Onverdeeld: 0 };
+    const tally = { Karin: 0, Harmen: 0, Danielle: 0, Onverdeeld: 0 };
     let total = 0;
     let trajecten = 0;
     const klanten = new Set();
@@ -325,7 +322,7 @@ function renderOverview(db) {
   };
 
   const splitFinanceByOwner = (entries) => {
-    const tally = { Karin: 0, Harmen: 0, Daan: 0, Onverdeeld: 0 };
+    const tally = { Karin: 0, Harmen: 0, Danielle: 0, Onverdeeld: 0 };
     let total = 0;
     const projectSet = new Set();
     const klantenSet = new Set();
@@ -408,7 +405,7 @@ function renderOverview(db) {
     months.push({
       month: d.toISOString().slice(0, 7),
       label: d.toLocaleDateString('nl-NL', { month: 'short' }),
-      karinRevenue: 0, karinCosts: 0, harmenRevenue: 0, harmenCosts: 0,
+      karinRevenue: 0, karinCosts: 0, harmenRevenue: 0, harmenCosts: 0, danielleRevenue: 0, danielleCosts: 0,
     });
   }
   const monthsByKey = Object.fromEntries(months.map((m) => [m.month, m]));
@@ -440,11 +437,13 @@ function renderOverview(db) {
       for (const person of keys) {
         const personShare = shares[person] * amount;
         if (f.type === 'income') {
-          if (person === 'Karin')  m.karinRevenue  += personShare;
-          if (person === 'Harmen') m.harmenRevenue += personShare;
+          if (person === 'Karin')    m.karinRevenue    += personShare;
+          if (person === 'Harmen')   m.harmenRevenue   += personShare;
+          if (person === 'Danielle') m.danielleRevenue += personShare;
         } else {
-          if (person === 'Karin')  m.karinCosts  += personShare;
-          if (person === 'Harmen') m.harmenCosts += personShare;
+          if (person === 'Karin')    m.karinCosts    += personShare;
+          if (person === 'Harmen')   m.harmenCosts   += personShare;
+          if (person === 'Danielle') m.danielleCosts += personShare;
         }
       }
     }
@@ -452,8 +451,8 @@ function renderOverview(db) {
 
   // Totaal netto per maand = (Karin + Harmen opbrengst) − (Karin + Harmen kosten)
   for (const m of months) {
-    m.totalRevenue = (m.karinRevenue || 0) + (m.harmenRevenue || 0);
-    m.totalCosts   = (m.karinCosts || 0) + (m.harmenCosts || 0);
+    m.totalRevenue = (m.karinRevenue || 0) + (m.harmenRevenue || 0) + (m.danielleRevenue || 0);
+    m.totalCosts   = (m.karinCosts || 0) + (m.harmenCosts || 0) + (m.danielleCosts || 0);
     m.totalNet     = m.totalRevenue - m.totalCosts;
   }
 
@@ -461,14 +460,16 @@ function renderOverview(db) {
     { key: 'totalNet',      label: 'Totaal netto',     color: '#D8FE56', bold: true },
     { key: 'totalRevenue',  label: 'Totaal opbrengst', color: '#FFFFFF' },
     { key: 'totalCosts',    label: 'Totaal kosten',    color: '#FF8FB6' },
-    { key: 'karinRevenue',  label: 'Karin opbrengst',  color: '#5BC0A8' },
-    { key: 'karinCosts',    label: 'Karin kosten',     color: '#3A7E70' },
-    { key: 'harmenRevenue', label: 'Harmen opbrengst', color: '#9B6FCF' },
-    { key: 'harmenCosts',   label: 'Harmen kosten',    color: '#5B2D8E' },
+    { key: 'karinRevenue',    label: 'Karin opbrengst',    color: '#5BC0A8' },
+    { key: 'karinCosts',      label: 'Karin kosten',       color: '#3A7E70' },
+    { key: 'harmenRevenue',   label: 'Harmen opbrengst',   color: '#9B6FCF' },
+    { key: 'harmenCosts',     label: 'Harmen kosten',      color: '#5B2D8E' },
+    { key: 'danielleRevenue', label: 'Danielle opbrengst', color: '#8FB6FF' },
+    { key: 'danielleCosts',   label: 'Danielle kosten',    color: '#4A6BB8' },
   ];
 
   // Lijnen die default uitstaan (om grafiek niet te druk te maken)
-  const DEFAULT_HIDDEN = new Set(['karinRevenue','karinCosts','harmenRevenue','harmenCosts']);
+  const DEFAULT_HIDDEN = new Set(['karinRevenue','karinCosts','harmenRevenue','harmenCosts','danielleRevenue','danielleCosts']);
   if (!appState._chartInited) {
     appState._chartInited = true;
     for (const k of DEFAULT_HIDDEN) appState.chartHidden.add(k);
@@ -847,9 +848,15 @@ function renderProjectForm(db, project) {
         <form id="project-form" class="stack-form">
           <input type="hidden" name="id" value="${escapeHtml(project?.id || '')}" />
           <label><span>Klant</span>
-            <select name="customer_id" required>
-              ${db.customers.map((c) => `<option value="${c.id}" ${project?.customer_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)} (${c.type})</option>`).join('')}
-            </select>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <select name="customer_id" required style="flex:1;min-width:0;">
+                ${db.customers
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((c) => `<option value="${c.id}" ${project?.customer_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)} (${c.type})</option>`).join('')}
+              </select>
+              <button type="button" class="button ghost" data-action="add-customer" style="white-space:nowrap;flex-shrink:0;">+ Nieuwe klant</button>
+            </div>
           </label>
           <label><span>Naam</span><input type="text" name="name" value="${escapeHtml(project?.name || '')}" required /></label>
           <label><span>Beschrijving</span><textarea name="description">${escapeHtml(project?.description || '')}</textarea></label>
@@ -868,7 +875,16 @@ function renderProjectForm(db, project) {
               </select>
             </label>
             <label><span>Prio</span><select name="priority">${selectOptions(PRIORITIES, project?.priority || 'medium')}</select></label>
-            <label><span>Owner</span><input type="text" name="owner" value="${escapeHtml(project?.owner || 'Harmen')}" /></label>
+            <label><span>Owner</span>
+              <select name="owner">
+                ${(() => {
+                  const cur = project?.owner || 'Harmen';
+                  const inList = OWNER_OPTIONS.includes(cur);
+                  return OWNER_OPTIONS.map((o) => `<option value="${escapeHtml(o)}" ${o === cur ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('') +
+                    (!inList && cur ? `<option value="${escapeHtml(cur)}" selected>${escapeHtml(cur)}</option>` : '');
+                })()}
+              </select>
+            </label>
             <label><span>Start</span><input type="date" name="start_date" value="${project?.start_date || ''}" /></label>
             <label><span>Geaccepteerd op</span><input type="date" name="accepted_date" value="${project?.accepted_date || ''}" /></label>
             <label><span>Volgende actie datum</span><input type="date" name="next_action_date" value="${project?.next_action_date || ''}" /></label>
@@ -881,13 +897,13 @@ function renderProjectForm(db, project) {
                 <option value="buiten_netwerk" ${project?.lead_source === 'buiten_netwerk' ? 'selected' : ''}>Buiten netwerk (telt als KPI-lead)</option>
               </select>
             </label>
-            <label style="align-self:end;">
-              <span>Holy shit moment</span>
-              <label style="display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-radius:14px;border:1px solid var(--glass-border);background:var(--glass-bg);font-weight:500;cursor:pointer;text-transform:none;letter-spacing:0;font-size:.92rem;">
-                <input type="checkbox" name="is_breakthrough" value="true" ${project?.is_breakthrough ? 'checked' : ''} style="width:auto;height:auto;margin:0;" />
+            <div>
+              <span style="display:block;color:var(--text-secondary);font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px;">Holy shit moment</span>
+              <label class="checkbox-pill">
+                <input type="checkbox" name="is_breakthrough" value="true" ${project?.is_breakthrough ? 'checked' : ''} />
                 <span>Markeer als doorbraak ✨</span>
               </label>
-            </label>
+            </div>
           </div>
           <div class="admin-actions">
             <button type="submit" class="button primary">Opslaan</button>
@@ -1097,9 +1113,10 @@ function renderFinanceBreakdown(entries, q) {
         <div><h2>Breakdown</h2><p>${vendorRows.length} regels · totaal ${fmtCurrency(grandTotal)}</p></div>
         <div class="person-toggle">
           ${[
-            { v: 'totaal', l: 'Totaal' },
-            { v: 'harmen', l: 'Harmen' },
-            { v: 'karin',  l: 'Karin' },
+            { v: 'totaal',   l: 'Totaal' },
+            { v: 'harmen',   l: 'Harmen' },
+            { v: 'karin',    l: 'Karin' },
+            { v: 'danielle', l: 'Danielle' },
           ].map((p) => `<a href="${personHref(p.v)}" class="${personFilter === p.v ? 'active' : ''}">${p.l}</a>`).join('')}
         </div>
       </div>
@@ -1309,7 +1326,10 @@ function renderFinance(db) {
 function renderKlanten(db) {
   return `
     <section class="page-section">
-      <div class="section-header"><div><h1>Klanten & samenwerkingen</h1></div></div>
+      <div class="section-header">
+        <div><h1>Klanten & samenwerkingen</h1></div>
+        <button type="button" class="button primary" data-action="add-customer">+ Nieuwe klant</button>
+      </div>
       <section class="panel">
         ${(() => {
           const enriched = db.customers
@@ -1515,6 +1535,59 @@ function attachEvents() {
     renderApp();
   });
 
+  document.querySelectorAll('[data-action="add-customer"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      appState.editingCustomer = {
+        name: '', type: 'klant', industry: '', status: 'active', notes: '',
+      };
+      renderApp();
+    });
+  });
+
+  document.querySelector('[data-action="customer-dialog-cancel"]')?.addEventListener('click', () => {
+    appState.editingCustomer = null;
+    document.getElementById('customer-dialog')?.close();
+    renderApp();
+  });
+
+  document.getElementById('customer-dialog')?.addEventListener('click', (e) => {
+    if (e.target.id === 'customer-dialog') {
+      appState.editingCustomer = null;
+      e.target.close();
+      renderApp();
+    }
+  });
+
+  document.getElementById('customer-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const payload = {
+      id: data.id || nextId('cus'),
+      name: data.name.trim(),
+      type: data.type,
+      industry: (data.industry || '').trim(),
+      status: data.status,
+      notes: (data.notes || '').trim(),
+    };
+    if (!payload.name) return;
+    try {
+      await upsertCustomer(payload);
+      appState.editingCustomer = null;
+      document.getElementById('customer-dialog')?.close();
+      // Als we op de project-form waren: pre-select de nieuwe klant
+      const projSelect = document.querySelector('select[name="customer_id"]');
+      if (projSelect) {
+        // loadAll re-rendert; de select kan op de oude pagina zijn vernieuwd, maar de optie bestaat nu
+        setTimeout(() => {
+          const fresh = document.querySelector('select[name="customer_id"]');
+          if (fresh) fresh.value = payload.id;
+        }, 50);
+      }
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
+  });
+
   document.querySelector('[data-action="dialog-cancel"]')?.addEventListener('click', () => {
     appState.editingTask = null;
     document.getElementById('task-dialog')?.close();
@@ -1602,12 +1675,56 @@ export function renderApp() {
         ${db.loading ? '<section class="panel"><p class="empty-state">Data laden uit Supabase…</p></section>' : renderPage(db, route)}
       </main>
     </div>
-    ${renderTaskDialog(db)}`;
+    ${renderTaskDialog(db)}
+    ${renderCustomerDialog(db)}`;
   attachEvents();
   if (appState.editingTask) {
     const dlg = document.getElementById('task-dialog');
     if (dlg && !dlg.open) dlg.showModal();
   }
+  if (appState.editingCustomer) {
+    const dlg = document.getElementById('customer-dialog');
+    if (dlg && !dlg.open) dlg.showModal();
+  }
+}
+
+function renderCustomerDialog(db) {
+  const c = appState.editingCustomer;
+  if (!c) return '';
+  return `
+    <dialog id="customer-dialog" class="task-dialog">
+      <form id="customer-form" class="stack-form">
+        <header class="task-dialog__head">
+          <div>
+            <span class="eyebrow" style="color:var(--accent);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600;">${c.id ? 'Klant bewerken' : 'Nieuwe klant'}</span>
+          </div>
+          <button type="button" class="task-dialog__close" data-action="customer-dialog-cancel" aria-label="Sluiten">×</button>
+        </header>
+        <input type="hidden" name="id" value="${escapeHtml(c.id || '')}" />
+        <label><span>Naam</span><input type="text" name="name" value="${escapeHtml(c.name || '')}" required /></label>
+        <div class="filter-grid">
+          <label><span>Type</span>
+            <select name="type">
+              <option value="klant"        ${c.type === 'klant' || !c.type ? 'selected' : ''}>Klant</option>
+              <option value="samenwerking" ${c.type === 'samenwerking' ? 'selected' : ''}>Samenwerking</option>
+              <option value="prospect"     ${c.type === 'prospect' ? 'selected' : ''}>Prospect</option>
+            </select>
+          </label>
+          <label><span>Industry</span><input type="text" name="industry" value="${escapeHtml(c.industry || '')}" placeholder="bijv. Overheid, AgriFood, IT" /></label>
+          <label><span>Status</span>
+            <select name="status">
+              <option value="active"   ${c.status === 'active' || !c.status ? 'selected' : ''}>Actief</option>
+              <option value="inactive" ${c.status === 'inactive' ? 'selected' : ''}>Inactief</option>
+            </select>
+          </label>
+        </div>
+        <label><span>Notities</span><textarea name="notes" rows="3" placeholder="Hoe ben je binnengekomen, contact, achtergrond…">${escapeHtml(c.notes || '')}</textarea></label>
+        <div class="task-dialog__actions">
+          <button type="button" class="button ghost" data-action="customer-dialog-cancel">Annuleren</button>
+          <button type="submit" class="button primary">${c.id ? 'Opslaan' : '+ Klant toevoegen'}</button>
+        </div>
+      </form>
+    </dialog>`;
 }
 
 function renderTaskDialog(db) {
