@@ -1639,12 +1639,14 @@ function attachEvents() {
       amount: km,
       category: TRIP_CATEGORY,
       vendor: (data.route || '').trim(),
-      description: (data.purpose || '').trim(),
+      description: (data.purpose || '').trim() || 'Rit',
       owner: data.owner || 'Harmen',
       project_id: data.project_id || null,
-      payment_status: '',
+      payment_status: 'verwacht',
       factuur_status: '',
-      recurring: null,
+      recurring: 'one_off',
+      source: 'manual',
+      entity: 'Morgen',
     };
     try {
       await upsertFinance(payload);
