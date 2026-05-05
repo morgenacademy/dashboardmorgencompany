@@ -1642,8 +1642,8 @@ function attachEvents() {
       description: (data.purpose || '').trim(),
       owner: data.owner || 'Harmen',
       project_id: data.project_id || null,
-      payment_status: null,
-      factuur_status: null,
+      payment_status: '',
+      factuur_status: '',
       recurring: null,
     };
     try {
