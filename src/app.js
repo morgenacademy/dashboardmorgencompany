@@ -941,7 +941,7 @@ function renderProjectDetail(db, projectId) {
       t.due_date ? badge(dueLabel(t.due_date), dueTone(t.due_date)) : '<span class="muted">—</span>',
       badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
       escapeHtml(t.owner || ''),
-      `<button type="button" class="button ghost" data-action="delete-task" data-task-id="${escapeHtml(t.id)}">×</button>`,
+      `<button type="button" class="button ghost" data-action="toggle-task-btn" data-task-id="${escapeHtml(t.id)}" title="${t.status === 'done' ? 'Heropenen' : 'Afvinken'}">${t.status === 'done' ? '↺' : '✓'}</button> <button type="button" class="button ghost" data-action="delete-task" data-task-id="${escapeHtml(t.id)}" title="Verwijderen">×</button>`,
     ];
   };
 
@@ -1453,6 +1453,16 @@ function attachEvents() {
       const task = getDatabase().tasks.find((t) => t.id === id);
       if (!task) return;
       task.status = e.target.checked ? 'done' : 'open';
+      await upsertTask(task);
+    });
+  });
+
+  document.querySelectorAll('[data-action="toggle-task-btn"]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.taskId;
+      const task = getDatabase().tasks.find((t) => t.id === id);
+      if (!task) return;
+      task.status = task.status === 'done' ? 'open' : 'done';
       await upsertTask(task);
     });
   });
