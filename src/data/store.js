@@ -144,6 +144,12 @@ export async function upsertFinance(entry) {
   await loadAll();
 }
 
+export async function deleteFinance(id) {
+  const { error } = await supabase.from('finance_entries').delete().eq('id', id);
+  if (error) throw error;
+  await loadAll();
+}
+
 export function nextId(prefix) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }

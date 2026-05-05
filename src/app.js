@@ -2,7 +2,7 @@ import {
   getDatabase, subscribe, loadAll,
   upsertProject, deleteProject,
   upsertTask, deleteTask,
-  upsertCustomer, upsertFinance, nextId,
+  upsertCustomer, upsertFinance, deleteFinance, nextId,
 } from './data/store.js';
 import { lineChart, barChart, dualLineChart, teamMonthlyChart } from './ui/charts.js';
 
@@ -123,9 +123,12 @@ function dueTone(dateStr) {
   return 'info';
 }
 
-const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null, editingCustomer: null };
+const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null, editingCustomer: null, editingTrip: null, tripFilters: {} };
 
 const OWNER_OPTIONS = ['Harmen', 'Karin', 'Danielle', 'Harmen & Karin', 'Harmen & Danielle', 'Karin & Danielle'];
+
+const TRIP_CATEGORY = 'Kilometers';
+const isTripEntry = (f) => f.category === TRIP_CATEGORY;
 
 subscribe(() => renderApp());
 
@@ -984,7 +987,7 @@ function renderProjectDetail(db, projectId) {
         <div class="panel-heading"><div><h2>Finance</h2><p>Income gekoppeld aan dit project.</p></div></div>
         ${table(
           ['Datum','Beschrijving','Bedrag','Categorie','Status'],
-          finance.map((f) => [
+          finance.filter((f) => !isTripEntry(f)).map((f) => [
             fmtDate(f.date),
             escapeHtml(f.description),
             (f.type === 'expense' ? '-' : '+') + fmtCurrency(f.amount),
@@ -993,6 +996,32 @@ function renderProjectDetail(db, projectId) {
           ]),
           { compact: true },
         )}
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Kilometers</h2>
+            <p>${finance.filter(isTripEntry).length} rit(ten) · ${fmtNumber(finance.filter(isTripEntry).reduce((s, t) => s + Number(t.amount || 0), 0))} km totaal</p>
+          </div>
+          <button type="button" class="button primary" data-action="add-trip" data-project-id="${escapeHtml(project.id)}">+ Rit</button>
+        </div>
+        ${(() => {
+          const trips = finance.filter(isTripEntry).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          if (trips.length === 0) return '<p class="empty-state">Nog geen ritten gelogd voor dit project.</p>';
+          return table(
+            ['Datum','Persoon','Route','Doel','Km',''],
+            trips.map((t) => [
+              fmtDate(t.date),
+              escapeHtml(t.owner || ''),
+              escapeHtml(t.vendor || ''),
+              escapeHtml(t.description || ''),
+              fmtNumber(Number(t.amount || 0)),
+              `<button type="button" class="button ghost" data-action="edit-trip" data-trip-id="${escapeHtml(t.id)}" title="Bewerken">✎</button> <button type="button" class="button ghost" data-action="delete-trip" data-trip-id="${escapeHtml(t.id)}" title="Verwijderen">×</button>`,
+            ]),
+            { compact: true },
+          );
+        })()}
       </section>
     </section>`;
 }
@@ -1174,8 +1203,8 @@ function renderFinance(db) {
     entries = entries.filter((f) => f.payment_status === filterPayment);
   }
 
-  const incomes = entries.filter((f) => f.type === 'income');
-  const expenses = entries.filter((f) => f.type === 'expense');
+  const incomes = entries.filter((f) => f.type === 'income' && !isTripEntry(f));
+  const expenses = entries.filter((f) => f.type === 'expense' && !isTripEntry(f));
   const incomeTotal = incomes.reduce((s, f) => s + Number(f.amount), 0);
   const expenseTotal = expenses.reduce((s, f) => s + Number(f.amount), 0);
   const ontvangen = incomes.filter((f) => f.payment_status === 'ontvangen').reduce((s, f) => s + Number(f.amount), 0);
@@ -1197,6 +1226,7 @@ function renderFinance(db) {
   }
   const monthsByKey = Object.fromEntries(months.map((m) => [m.month, m]));
   for (const f of db.finance) {
+    if (isTripEntry(f)) continue;
     if (!f.date || f.date < ys || f.date > ye) continue;
     const amount = Number(f.amount || 0);
     if (!amount) continue;
@@ -1302,7 +1332,7 @@ function renderFinance(db) {
             </select>`;
           return table(
             ['Datum','Type','Beschrijving','Vendor','Bedrag','Categorie','Project','Betaalstatus'],
-            db.finance.map((f) => [
+            db.finance.filter((f) => !isTripEntry(f)).map((f) => [
               fmtDate(f.date),
               badge(f.type === 'income' ? 'in' : 'uit', f.type === 'income' ? 'success' : 'warning'),
               escapeHtml(f.description),
@@ -1320,6 +1350,67 @@ function renderFinance(db) {
           );
         })()}
       </section>
+
+      ${renderKilometersSection(db, customersById, projectsById)}
+    </section>`;
+}
+
+function renderKilometersSection(db, customersById, projectsById) {
+  const allTrips = db.finance.filter(isTripEntry);
+  const years = Array.from(new Set(allTrips.map((t) => (t.date || '').slice(0, 4)).filter(Boolean))).sort().reverse();
+  const currentYear = new Date().getFullYear().toString();
+  if (!years.includes(currentYear)) years.unshift(currentYear);
+
+  const fYear  = appState.tripFilters.year  ?? currentYear;
+  const fOwner = appState.tripFilters.owner ?? '';
+
+  let trips = allTrips.slice();
+  if (fYear)  trips = trips.filter((t) => (t.date || '').slice(0, 4) === fYear);
+  if (fOwner) trips = trips.filter((t) => (t.owner || '') === fOwner);
+  trips.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  const totalKm = trips.reduce((s, t) => s + Number(t.amount || 0), 0);
+  const owners = Array.from(new Set(allTrips.map((t) => t.owner).filter(Boolean))).sort();
+
+  return `
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Kilometers</h2>
+          <p>${trips.length} rit(ten) · ${fmtNumber(totalKm)} km totaal · voor de Belastingdienst</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select data-action="trip-filter-year" style="font-size:.82rem;">
+            <option value="">Alle jaren</option>
+            ${years.map((y) => `<option value="${escapeHtml(y)}" ${y === fYear ? 'selected' : ''}>${escapeHtml(y)}</option>`).join('')}
+          </select>
+          <select data-action="trip-filter-owner" style="font-size:.82rem;">
+            <option value="">Iedereen</option>
+            ${owners.map((o) => `<option value="${escapeHtml(o)}" ${o === fOwner ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+          </select>
+          <button type="button" class="button ghost" data-action="export-trips-csv">⬇ CSV</button>
+          <button type="button" class="button primary" data-action="add-trip">+ Rit</button>
+        </div>
+      </div>
+      ${trips.length === 0
+        ? '<p class="empty-state">Nog geen ritten in deze selectie. Klik op "+ Rit" om er één toe te voegen.</p>'
+        : table(
+            ['Datum','Persoon','Project','Route','Doel','Km',''],
+            trips.map((t) => {
+              const p = projectsById[t.project_id];
+              const c = p ? customersById[p.customer_id] : null;
+              return [
+                fmtDate(t.date),
+                escapeHtml(t.owner || ''),
+                p ? `<a href="#/projecten/${escapeHtml(p.id)}"><span class="muted">${escapeHtml(c?.name || '')}</span> · ${escapeHtml(p.name)}</a>` : '<span class="muted">—</span>',
+                escapeHtml(t.vendor || ''),
+                escapeHtml(t.description || ''),
+                fmtNumber(Number(t.amount || 0)),
+                `<button type="button" class="button ghost" data-action="edit-trip" data-trip-id="${escapeHtml(t.id)}" title="Bewerken">✎</button> <button type="button" class="button ghost" data-action="delete-trip" data-trip-id="${escapeHtml(t.id)}" title="Verwijderen">×</button>`,
+              ];
+            }),
+            { compact: true },
+          )}
     </section>`;
 }
 
@@ -1465,6 +1556,147 @@ function attachEvents() {
       task.status = task.status === 'done' ? 'open' : 'done';
       await upsertTask(task);
     });
+  });
+
+  // ===== Kilometers / ritten =====
+  function openTripDialog(seed = {}) {
+    appState.editingTrip = {
+      id: '',
+      date: new Date().toISOString().slice(0, 10),
+      owner: 'Harmen',
+      project_id: '',
+      route: '',
+      purpose: '',
+      kilometers: '',
+      ...seed,
+    };
+    renderApp();
+  }
+
+  document.querySelectorAll('[data-action="add-trip"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const projectId = e.currentTarget.dataset.projectId || '';
+      const project = projectId ? getDatabase().projects.find((p) => p.id === projectId) : null;
+      openTripDialog({
+        project_id: projectId,
+        owner: project?.owner && OWNER_OPTIONS.includes(project.owner) ? project.owner : 'Harmen',
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-action="edit-trip"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const id = e.currentTarget.dataset.tripId;
+      const entry = getDatabase().finance.find((f) => f.id === id);
+      if (!entry) return;
+      openTripDialog({
+        id: entry.id,
+        date: entry.date || new Date().toISOString().slice(0, 10),
+        owner: entry.owner || 'Harmen',
+        project_id: entry.project_id || '',
+        route: entry.vendor || '',
+        purpose: entry.description || '',
+        kilometers: Number(entry.amount || 0),
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-action="delete-trip"]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.tripId;
+      if (!confirm('Deze rit verwijderen?')) return;
+      try {
+        await deleteFinance(id);
+      } catch (err) {
+        alert('Verwijderen mislukt: ' + err.message);
+      }
+    });
+  });
+
+  document.querySelector('[data-action="trip-dialog-cancel"]')?.addEventListener('click', () => {
+    appState.editingTrip = null;
+    document.getElementById('trip-dialog')?.close();
+    renderApp();
+  });
+
+  document.getElementById('trip-dialog')?.addEventListener('click', (e) => {
+    if (e.target.id === 'trip-dialog') {
+      appState.editingTrip = null;
+      e.target.close();
+      renderApp();
+    }
+  });
+
+  document.getElementById('trip-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const km = Number(data.kilometers);
+    if (!km || km <= 0) { alert('Vul een aantal kilometers in.'); return; }
+    const payload = {
+      id: data.id || nextId('trip'),
+      date: data.date,
+      type: 'expense',
+      amount: km,
+      category: TRIP_CATEGORY,
+      vendor: (data.route || '').trim(),
+      description: (data.purpose || '').trim(),
+      owner: data.owner || 'Harmen',
+      project_id: data.project_id || null,
+      payment_status: null,
+      factuur_status: null,
+      recurring: null,
+    };
+    try {
+      await upsertFinance(payload);
+      appState.editingTrip = null;
+      document.getElementById('trip-dialog')?.close();
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
+  });
+
+  document.querySelector('[data-action="trip-filter-year"]')?.addEventListener('change', (e) => {
+    appState.tripFilters.year = e.target.value;
+    renderApp();
+  });
+
+  document.querySelector('[data-action="trip-filter-owner"]')?.addEventListener('change', (e) => {
+    appState.tripFilters.owner = e.target.value;
+    renderApp();
+  });
+
+  document.querySelector('[data-action="export-trips-csv"]')?.addEventListener('click', () => {
+    const db = getDatabase();
+    const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+    const projectsById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
+    const fYear  = appState.tripFilters.year  ?? new Date().getFullYear().toString();
+    const fOwner = appState.tripFilters.owner ?? '';
+    let trips = db.finance.filter(isTripEntry);
+    if (fYear)  trips = trips.filter((t) => (t.date || '').slice(0, 4) === fYear);
+    if (fOwner) trips = trips.filter((t) => (t.owner || '') === fOwner);
+    trips.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['Datum','Persoon','Klant','Project','Route','Doel','Kilometers'];
+    const rows = trips.map((t) => {
+      const p = projectsById[t.project_id];
+      const c = p ? customersById[p.customer_id] : null;
+      return [t.date || '', t.owner || '', c?.name || '', p?.name || '', t.vendor || '', t.description || '', Number(t.amount || 0)];
+    });
+    const totalKm = rows.reduce((s, r) => s + Number(r[6] || 0), 0);
+    rows.push(['','','','','','Totaal', totalKm]);
+    const csv = [header, ...rows].map((r) => r.map(esc).join(';')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kilometers${fYear ? '-' + fYear : ''}${fOwner ? '-' + fOwner.replace(/\s+/g, '_') : ''}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   });
 
   document.querySelectorAll('[data-action="download-ics"]').forEach((btn) => {
@@ -1686,7 +1918,8 @@ export function renderApp() {
       </main>
     </div>
     ${renderTaskDialog(db)}
-    ${renderCustomerDialog(db)}`;
+    ${renderCustomerDialog(db)}
+    ${renderTripDialog(db)}`;
   attachEvents();
   if (appState.editingTask) {
     const dlg = document.getElementById('task-dialog');
@@ -1694,6 +1927,10 @@ export function renderApp() {
   }
   if (appState.editingCustomer) {
     const dlg = document.getElementById('customer-dialog');
+    if (dlg && !dlg.open) dlg.showModal();
+  }
+  if (appState.editingTrip) {
+    const dlg = document.getElementById('trip-dialog');
     if (dlg && !dlg.open) dlg.showModal();
   }
 }
@@ -1790,6 +2027,59 @@ function renderTaskDialog(db) {
         <div class="task-dialog__actions">
           <button type="button" class="button ghost" data-action="dialog-cancel">Annuleren</button>
           <button type="submit" class="button primary">${t.id ? 'Opslaan' : '+ Taak toevoegen'}</button>
+        </div>
+      </form>
+    </dialog>`;
+}
+
+function renderTripDialog(db) {
+  const t = appState.editingTrip;
+  if (!t) return '';
+  const project = db.projects.find((p) => p.id === t.project_id);
+  const customer = project ? db.customers.find((c) => c.id === project.customer_id) : null;
+  const ownerSelected = t.owner || 'Harmen';
+  const inOwnerOptions = OWNER_OPTIONS.includes(ownerSelected);
+  const projectsOrdered = db.projects.slice()
+    .sort((a, b) => {
+      const ca = db.customers.find((c) => c.id === a.customer_id)?.name || '';
+      const cb = db.customers.find((c) => c.id === b.customer_id)?.name || '';
+      return ca.localeCompare(cb);
+    });
+  return `
+    <dialog id="trip-dialog" class="task-dialog">
+      <form id="trip-form" class="stack-form">
+        <header class="task-dialog__head">
+          <div>
+            <span class="eyebrow" style="color:var(--accent);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600;">${t.id ? 'Rit bewerken' : 'Nieuwe rit'}</span>
+            ${customer ? `<p class="muted" style="margin:6px 0 0;">${escapeHtml(customer.name)} · ${escapeHtml(project?.name || '')}</p>` : ''}
+          </div>
+          <button type="button" class="task-dialog__close" data-action="trip-dialog-cancel" aria-label="Sluiten">×</button>
+        </header>
+        <input type="hidden" name="id" value="${escapeHtml(t.id || '')}" />
+        <div class="filter-grid">
+          <label><span>Datum</span><input type="date" name="date" value="${escapeHtml(t.date || new Date().toISOString().slice(0, 10))}" required /></label>
+          <label><span>Persoon</span>
+            <select name="owner">
+              ${OWNER_OPTIONS.map((o) => `<option value="${escapeHtml(o)}" ${o === ownerSelected ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+              ${!inOwnerOptions && ownerSelected ? `<option value="${escapeHtml(ownerSelected)}" selected>${escapeHtml(ownerSelected)}</option>` : ''}
+            </select>
+          </label>
+          <label><span>Kilometers</span><input type="number" name="kilometers" value="${escapeHtml(String(t.kilometers ?? ''))}" min="0" step="0.1" required /></label>
+        </div>
+        <label><span>Project</span>
+          <select name="project_id">
+            <option value="">— niet gekoppeld —</option>
+            ${projectsOrdered.map((p) => {
+              const c = db.customers.find((cu) => cu.id === p.customer_id);
+              return `<option value="${escapeHtml(p.id)}" ${p.id === t.project_id ? 'selected' : ''}>${escapeHtml(c?.name || '')} · ${escapeHtml(p.name)}</option>`;
+            }).join('')}
+          </select>
+        </label>
+        <label><span>Route (van → naar)</span><input type="text" name="route" value="${escapeHtml(t.route || '')}" placeholder="Hilversum → Oosterhout" /></label>
+        <label><span>Doel</span><input type="text" name="purpose" value="${escapeHtml(t.purpose || '')}" placeholder="Bezoek opdrachtgever, kick-off, …" /></label>
+        <div class="task-dialog__actions">
+          <button type="button" class="button ghost" data-action="trip-dialog-cancel">Annuleren</button>
+          <button type="submit" class="button primary">${t.id ? 'Opslaan' : '+ Rit toevoegen'}</button>
         </div>
       </form>
     </dialog>`;
