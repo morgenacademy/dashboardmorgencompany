@@ -6,3 +6,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# Wachtwoord-gate op alle routes (alleen actief als COCKPIT_PASSWORD is gezet).
+[[edge_functions]]
+  path = "/*"
+  function = "gate"
