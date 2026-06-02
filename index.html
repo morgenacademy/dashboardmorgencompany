@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Morgen · Cockpit</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='rgb(91,45,142)'/><text x='32' y='40' font-family='Barlow,Arial' font-size='38' font-weight='900' fill='white' text-anchor='middle'>M</text><circle cx='50' cy='46' r='6' fill='rgb(216,254,86)'/></svg>" />
+    <link rel="icon" href="/assets/icons/favicon-company.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -352,14 +352,19 @@
         go: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
         lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         supabase: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
+        n8n: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h3M14 8.5l3 2M14 15.5l3-2"/>',
+        airtable: '<path d="M12 3 3 7l9 4 9-4-9-4z"/><path d="M3 7v6l9 4 9-4V7"/>',
         chevron: '<path d="m6 9 6 6 6-6"/>',
       };
       const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
       // Toon echte icon-art uit /assets/icons als die bestaat; val anders terug op de lijn-iconen hierboven.
-      const iconBox = (key) => `<span class="ck-link__icon">`
-        + `<img class="ck-art" src="/assets/icons/icon-${key}.svg" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">`
-        + icon(key)
-        + `</span>`;
+      const iconBox = (it) => {
+        const src = it.img || `/assets/icons/icon-${it.icon}.svg`;
+        return `<span class="ck-link__icon">`
+          + `<img class="ck-art" src="${src}" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">`
+          + icon(it.icon)
+          + `</span>`;
+      };
 
       /* ===== Klok + begroeting ===== */
       const params = new URLSearchParams(location.search);
@@ -383,14 +388,20 @@
           { label: 'Supabase', sub: 'Projecten', flyout: 'supabase', href: 'https://supabase.com/dashboard/project/jeqvjtnxgxpjviwhjmzr', icon: 'supabase' },
           { label: 'Lovable', sub: 'AI app builder', href: 'https://lovable.dev', icon: 'lovable', ext: true },
         ]},
-        { group: 'Morgen apps', items: [
+        { group: 'Apps', items: [
           { label: 'Dashboard', sub: 'Omzet · projecten · taken', href: '/dashboard', icon: 'dashboard' },
           { label: 'Interne workflow', sub: 'Git & samenwerken', href: 'https://github.com/morgenacademy/internal-workflow', icon: 'workflow', ext: true },
-          { label: 'Website', sub: 'morgencompany.com', href: 'https://morgencompany.com', icon: 'website', ext: true },
-          { label: 'Academy', sub: 'Cursist · morgenacademy.nl', href: 'https://morgenacademy.nl', icon: 'academy', ext: true },
-          { label: 'Academy', sub: 'Admin', href: '', icon: 'academy', ext: true },
-          { label: 'Klantportaal', sub: 'Admin', href: '', icon: 'portal', ext: true },
-          { label: 'Klantportaal', sub: 'Klant', href: '', icon: 'portal', ext: true },
+          { label: 'Website', sub: 'morgencompany.com', href: 'https://morgencompany.com', img: '/assets/icons/favicon-company.svg', icon: 'website', ext: true },
+          { label: 'Academy', sub: 'morgenacademy.nl', href: 'https://morgenacademy.nl', img: '/assets/icons/favicon-academy.svg', icon: 'academy', ext: true },
+        ]},
+        { group: 'Beheer', items: [
+          { label: 'Academy admin', sub: 'Uploaden', href: 'https://morgenacademy.nl/admin/upload', icon: 'academy', ext: true },
+          { label: 'Klantportaal', sub: 'Admin · klanten', href: 'https://morgenacademy.nl/admin/portal', icon: 'portal', ext: true },
+          { label: 'Airtable', sub: 'Admin', href: 'https://airtable.com/apperinC97bEEJTZg/tblPEEkRn6lQywYAM/viwEGJzvdIPJeCA8P?blocks=hide', icon: 'airtable', ext: true },
+        ]},
+        { group: 'Automatisering', items: [
+          { label: 'n8n · Morgen', sub: 'Onze workflows', href: 'https://n8n.morgenacademy.nl/home/workflows', icon: 'n8n', ext: true },
+          { label: 'n8n · Trainees', sub: 'Training-workflows', href: 'https://training-n8n.morgenacademy.nl/home/workflows', icon: 'n8n', ext: true },
         ]},
         { group: 'Tools', items: [
           { label: 'Google Drive', sub: 'Bestanden', href: 'https://drive.google.com', icon: 'drive', ext: true },
@@ -399,16 +410,16 @@
       ];
       function linkCard(it) {
         if (it.flyout) {
-          const inner = iconBox(it.icon)
+          const inner = iconBox(it)
             + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)}</span></span>`;
           return `<button type="button" class="ck-link ck-link--flyout" data-flyout="${it.flyout}">${inner}<span class="ck-link__arrow">${icon('chevron')}</span></button>`;
         }
         if (!it.href || it.href === '#') {
-          const inner = iconBox(it.icon)
+          const inner = iconBox(it)
             + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)} · binnenkort</span></span>`;
           return `<div class="ck-link ck-link--soon" aria-disabled="true">${inner}<span class="ck-link__arrow">${icon('lock')}</span></div>`;
         }
-        const inner = iconBox(it.icon)
+        const inner = iconBox(it)
           + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)}</span></span>`;
         const tgt = it.ext ? ' target="_blank" rel="noopener"' : '';
         return `<a class="ck-link" href="${it.href}"${tgt}>${inner}<span class="ck-link__arrow">${icon(it.ext ? 'ext' : 'go')}</span></a>`;

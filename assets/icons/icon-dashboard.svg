@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>Dashboard</title>
+  <defs>
+    <linearGradient id="neon" x1="6" y1="8" x2="58" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff4ff3" />
+      <stop offset="0.52" stop-color="#a45cff" />
+      <stop offset="1" stop-color="#42d8ff" />
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation=".8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  <g stroke="url(#neon)" stroke-width="2.8" opacity=".35" filter="url(#glow)">
+    <path d="M8 12a5 5 0 0 1 5-5h46v39a5 5 0 0 1-5 5H29l-6 6-5-6h-5a5 5 0 0 1-5-5V12Z" />
+    <path d="M16 41a14 14 0 0 1 28 0" />
+    <path d="M42 45v-13" />
+    <path d="M49 45V25" />
+    <path d="M35 45v-8" />
+    <path d="M12 50l8-7 10 4 10-8 10 3" />
+  </g>
+  <g stroke="url(#neon)" stroke-width="1.35" vector-effect="non-scaling-stroke">
+    <path d="M8 12a5 5 0 0 1 5-5h46v39a5 5 0 0 1-5 5H29l-6 6-5-6h-5a5 5 0 0 1-5-5V12Z" />
+    <path d="M14 15h.01M20 15h.01M26 15h.01" />
+    <path d="M34 14h11l4-4h9" />
+    <path d="M16 41a14 14 0 0 1 28 0" />
+    <path d="M20 34l-3-1.2" />
+    <path d="M29 29l-.7-3" />
+    <path d="M37 32l2-2.2" />
+    <path d="M42 45v-13" />
+    <path d="M49 45V25" />
+    <path d="M35 45v-8" />
+    <path d="M12 50l8-7 10 4 10-8 10 3" />
+    <path d="M46 50h4" />
+    <path d="M54 50h2" />
+  </g>
+  <g stroke="#D8FE56" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 39l13-13" stroke-width="2.2" opacity=".32" filter="url(#glow)" />
+    <path d="M30 39l13-13" stroke-width="1.45" vector-effect="non-scaling-stroke" />
+    <circle cx="30" cy="39" r="3" stroke-width="1.35" vector-effect="non-scaling-stroke" />
+    <circle cx="52" cy="42" r="3" stroke-width="1.35" vector-effect="non-scaling-stroke" />
+  </g>
+</svg>

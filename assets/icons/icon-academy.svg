@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>Academy</title>
+  <defs>
+    <linearGradient id="neon" x1="6" y1="9" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff4ff3" />
+      <stop offset="0.52" stop-color="#a45cff" />
+      <stop offset="1" stop-color="#42d8ff" />
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation=".8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  <g stroke="url(#neon)" stroke-width="2.8" opacity=".33" filter="url(#glow)">
+    <path d="M10 19l22-11 22 11-22 12-22-12Z" />
+    <path d="M20 27v8c6 4.5 18 4.5 24 0v-8" />
+    <path d="M15 42c8-3 19 0 32 9" />
+    <path d="M49 42c-8-3-19 0-32 9" />
+    <path d="M13 41v14c10-2 20 1 31 9" />
+    <path d="M51 41v14c-10-2-20 1-31 9" />
+  </g>
+  <g stroke="url(#neon)" stroke-width="1.35" vector-effect="non-scaling-stroke">
+    <path d="M10 19l22-11 22 11-22 12-22-12Z" />
+    <path d="M20 27v8c6 4.5 18 4.5 24 0v-8" />
+    <path d="M24 20h25" />
+    <path d="M15 42c8-3 19 0 32 9" />
+    <path d="M49 42c-8-3-19 0-32 9" />
+    <path d="M13 41v14c10-2 20 1 31 9" />
+    <path d="M51 41v14c-10-2-20 1-31 9" />
+    <path d="M32 48v12" />
+    <path d="M13 55h-6l-4-5" />
+    <path d="M51 55h6l4-5" />
+    <circle cx="7" cy="50" r="3" />
+    <circle cx="57" cy="50" r="3" />
+    <path d="M52 20v13" />
+  </g>
+  <circle cx="52" cy="36" r="3" stroke="#D8FE56" stroke-width="1.45" vector-effect="non-scaling-stroke" />
+</svg>
