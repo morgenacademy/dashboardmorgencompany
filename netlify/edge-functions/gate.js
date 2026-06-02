@@ -1,16 +1,19 @@
 // Wachtwoord-gate met langlevende cookie. Draait op elke request (Netlify Edge / Deno).
 // - Geen COCKPIT_PASSWORD ingesteld -> gate uit (site werkt direct, geen lockout-risico).
+// - Statische assets (css/js/iconen/fonts) gaan ALTIJD door, anders kan de cockpit niet stylen/laden.
+// - Alleen HTML-pagina's en /api/* worden afgeschermd.
 // - Juist wachtwoord -> 180-daagse HttpOnly-cookie -> daarna elke browserstart direct door.
 const COOKIE = 'ck_gate';
 const MAX_AGE = 60 * 60 * 24 * 180; // 180 dagen
+const ASSET = /^\/(src|assets)\/|\.(css|js|mjs|map|svg|png|jpe?g|webp|gif|ico|woff2?|ttf|json|txt|xml)$/i;
 
 async function sha256(s) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function loginPage(error) {
-  return `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+function loginResponse(status, error) {
+  const html = `<!doctype html><html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Morgen · Cockpit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;900&display=swap" rel="stylesheet">
@@ -35,34 +38,41 @@ ${error ? '<p class="err">Onjuist wachtwoord</p>' : ''}
 <input type="password" name="password" placeholder="Wachtwoord" autofocus autocomplete="current-password" required>
 <button type="submit">Toegang</button>
 </form></body></html>`;
+  return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
-export default async (request, context) => {
+export default async (request) => {
   const password = Deno.env.get('COCKPIT_PASSWORD');
   if (!password) return; // gate uit
 
   const url = new URL(request.url);
+  const path = url.pathname;
   const expected = await sha256(password);
 
-  if (url.pathname === '/__gate' && request.method === 'POST') {
+  // Login-POST afhandelen.
+  if (path === '/__gate' && request.method === 'POST') {
     const form = await request.formData();
-    if (form.get('password') !== password) {
-      return new Response(loginPage(true), { status: 401, headers: { 'content-type': 'text/html; charset=utf-8' } });
-    }
+    if (form.get('password') !== password) return loginResponse(401, true);
     return new Response(null, {
       status: 303,
       headers: {
         location: '/',
         'set-cookie': `${COOKIE}=${expected}; Max-Age=${MAX_AGE}; Path=/; HttpOnly; Secure; SameSite=Lax`,
+        'cache-control': 'no-store',
       },
     });
   }
 
+  // Statische assets altijd doorlaten (zodat de pagina kan stylen + laden).
+  if (ASSET.test(path)) return;
+
+  // Geldige cookie -> doorlaten.
   const cookie = request.headers.get('cookie') || '';
   const m = cookie.match(/(?:^|;\s*)ck_gate=([a-f0-9]{64})/);
-  if (m && m[1] === expected) return; // geldige cookie -> doorlaten
+  if (m && m[1] === expected) return;
 
-  return new Response(loginPage(false), { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  // Anders: wachtwoordpagina.
+  return loginResponse(200, false);
 };
 
 export const config = { path: '/*' };
