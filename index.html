@@ -63,6 +63,10 @@
       .ck-section__head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
       .ck-section__head .ck-eyebrow { white-space: nowrap; }
       .ck-h2 { font-weight: 900; color: var(--white); font-size: clamp(1.4rem, 2.4vw, 2rem); margin: 0; line-height: 1; }
+      .ck-eye { margin-left: auto; align-self: center; display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass-bg-strong); color: var(--text-secondary); cursor: pointer; transition: var(--transition); flex: 0 0 auto; }
+      .ck-eye:hover { color: var(--white); border-color: rgba(255,255,255,.32); }
+      .ck-eye svg { width: 19px; height: 19px; }
+      .ck-stand-hint { font-size: .85rem; margin: -8px 0 0; }
 
       /* ---------- Linkgrid ---------- */
       .ck-group { margin-bottom: 26px; }
@@ -226,7 +230,6 @@
           </div>
         </div>
         <div class="ck-hero__main">
-          <span class="ck-eyebrow">Cockpit</span>
           <h1 class="ck-h1" id="greeting">Welkom</h1>
         </div>
       </header>
@@ -239,8 +242,11 @@
         <div class="ck-section__head">
           <span class="ck-eyebrow">Vandaag bij Morgen</span>
           <h2 class="ck-h2">De stand van zaken</h2>
+          <button class="ck-eye" id="stand-eye" type="button" aria-label="Toon cijfers" aria-expanded="false"></button>
         </div>
+        <p class="ck-stand-hint muted" id="stand-hint">Verborgen — klik op het oogje om te tonen</p>
 
+        <div id="stand-body" hidden>
         <div class="ck-kpis" id="kpis"><p class="muted ck-empty">Laden…</p></div>
 
         <form class="ck-quickadd" id="quickadd" autocomplete="off">
@@ -268,6 +274,7 @@
             <span class="muted" id="proj-count"></span>
           </div>
           <div id="projects"><p class="muted ck-empty">Laden…</p></div>
+        </div>
         </div>
       </section>
 
@@ -354,6 +361,8 @@
         n8n: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h3M14 8.5l3 2M14 15.5l3-2"/>',
         airtable: '<path d="M12 3 3 7l9 4 9-4-9-4z"/><path d="M3 7v6l9 4 9-4V7"/>',
         chevron: '<path d="m6 9 6 6 6-6"/>',
+        eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+        eyeoff: '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
       };
       const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
       // Toon echte icon-art uit /assets/icons als die bestaat; val anders terug op de lijn-iconen hierboven.
@@ -372,7 +381,7 @@
       // Altijd "Goedemorgen." — maar 's middags/avonds/'s nachts "morgen." doorstrepen + echte tijd erachter.
       function greetingHtml(h) {
         const period = h < 6 ? 'nacht' : h < 12 ? null : h < 18 ? 'middag' : 'avond';
-        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">morgen<span class="dot">.</span></span>`;
+        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">MORGEN<span class="dot">.</span></span>`;
         return `Goede${morgen}${period ? ' ' + period : ''}${NAME ? `, <b>${NAME}</b>` : ''}`;
       }
       function tick() {
@@ -390,7 +399,7 @@
           { label: 'GitHub', sub: 'Recente repos', flyout: 'github', href: 'https://github.com/repos?q=contributed-by%3A%40me+sort%3Aupdated', icon: 'github' },
           { label: 'Netlify', sub: 'Recente deploys', flyout: 'netlify', href: 'https://app.netlify.com', icon: 'netlify' },
           { label: 'Supabase', sub: 'Projecten', flyout: 'supabase', href: 'https://supabase.com/dashboard/project/jeqvjtnxgxpjviwhjmzr', icon: 'supabase' },
-          { label: 'Lovable', sub: 'AI app builder', href: 'https://lovable.dev', icon: 'lovable', ext: true },
+          { label: 'Lovable', sub: 'Projecten', href: 'https://lovable.dev/projects', icon: 'lovable', ext: true },
         ]},
         { group: 'Apps', items: [
           { label: 'Dashboard', sub: 'Omzet · projecten · taken', href: '/dashboard', icon: 'dashboard' },
@@ -735,6 +744,20 @@
           el.innerHTML = `<p class="muted ck-empty">AI-radar beschikbaar na deploy (Netlify Function).</p>`;
         }
       }
+
+      /* ===== Stand van zaken: oogje (standaard dicht, beter voor een startpagina) ===== */
+      const standBody = byId('stand-body');
+      const standHint = byId('stand-hint');
+      const standEye = byId('stand-eye');
+      function setStand(open) {
+        standBody.hidden = !open;
+        standHint.hidden = open;
+        standEye.innerHTML = icon(open ? 'eye' : 'eyeoff');
+        standEye.setAttribute('aria-expanded', String(open));
+        standEye.setAttribute('aria-label', open ? 'Verberg cijfers' : 'Toon cijfers');
+      }
+      standEye.addEventListener('click', () => setStand(standBody.hidden));
+      setStand(false);
 
       /* ===== Init ===== */
       subscribe(render);
