@@ -28,7 +28,7 @@
       .ck { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 clamp(20px,4vw,48px) 60px; }
 
       /* ---------- Hero ---------- */
-      .ck-hero { min-height: clamp(380px, 58vh, 620px); display: flex; flex-direction: column; padding-top: 28px; }
+      .ck-hero { display: flex; flex-direction: column; padding-top: 28px; }
       .ck-topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
       .ck-brand { font-weight: 900; font-size: 1.45rem; letter-spacing: .04em; color: var(--white); text-transform: uppercase; flex: 0 0 auto; }
       .ck-brand span { color: var(--accent); }
@@ -49,10 +49,13 @@
       .ck-search-trigger kbd { font: inherit; font-size: .72rem; font-weight: 600; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--glass-border); color: var(--text-muted); flex: 0 0 auto; }
       @media (max-width: 760px) { .ck-search-trigger__label, .ck-search-trigger kbd { display: none; } }
 
-      .ck-hero__main { margin-top: auto; padding-bottom: 6px; }
+      .ck-hero__main { margin-top: 56px; padding-bottom: 10px; }
       .ck-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
       .ck-h1 { font-weight: 900; color: var(--white); font-size: clamp(2.6rem, 6vw, 5rem); line-height: .95; letter-spacing: .01em; margin: .28em 0 .22em; }
       .ck-h1 b { color: var(--accent); font-weight: 900; }
+      .ck-morgen { position: relative; white-space: nowrap; }
+      .ck-morgen .dot { color: var(--accent); }
+      .ck-morgen--struck::after { content: ''; position: absolute; left: -1%; right: -1%; top: 52%; height: .08em; background: var(--accent); border-radius: 3px; transform: rotate(-2.5deg); }
       .ck-sub { color: var(--text-secondary); font-size: clamp(1rem, 1.5vw, 1.22rem); max-width: 48ch; margin: 0; line-height: 1.6; }
 
       /* ---------- Secties ---------- */
@@ -228,11 +231,7 @@
         </div>
       </header>
 
-      <section class="ck-section">
-        <div class="ck-section__head">
-          <span class="ck-eyebrow">Snel naar</span>
-          <h2 class="ck-h2">Tools</h2>
-        </div>
+      <section class="ck-section ck-section--links">
         <div id="links"></div>
       </section>
 
@@ -370,12 +369,17 @@
       const params = new URLSearchParams(location.search);
       const who = (params.get('who') || '').toLowerCase();
       const NAME = who === 'harmen' ? 'Harmen' : who === 'karin' ? 'Karin' : '';
-      const greetWord = (h) => (h < 6 ? 'Goedenacht' : h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond');
+      // Altijd "Goedemorgen." — maar 's middags/avonds/'s nachts "morgen." doorstrepen + echte tijd erachter.
+      function greetingHtml(h) {
+        const period = h < 6 ? 'nacht' : h < 12 ? null : h < 18 ? 'middag' : 'avond';
+        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">morgen<span class="dot">.</span></span>`;
+        return `Goede${morgen}${period ? ' ' + period : ''}${NAME ? `, <b>${NAME}</b>` : ''}`;
+      }
       function tick() {
         const now = new Date();
         byId('clock').textContent = now.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
         byId('date').textContent = now.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
-        byId('greeting').innerHTML = greetWord(now.getHours()) + (NAME ? `, <b>${NAME}</b>` : '');
+        byId('greeting').innerHTML = greetingHtml(now.getHours());
       }
       tick();
       setInterval(tick, 20000);
