@@ -381,7 +381,7 @@
       // Altijd "Goedemorgen." — maar 's middags/avonds/'s nachts "morgen." doorstrepen + echte tijd erachter.
       function greetingHtml(h) {
         const period = h < 6 ? 'nacht' : h < 12 ? null : h < 18 ? 'middag' : 'avond';
-        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">Morgen<span class="dot">.</span></span>`;
+        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">MORGEN<span class="dot">.</span></span>`;
         return `Goede${morgen}${period ? ' ' + period : ''}${NAME ? `, <b>${NAME}</b>` : ''}`;
       }
       function tick() {
