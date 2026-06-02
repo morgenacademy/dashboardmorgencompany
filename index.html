@@ -3,14 +3,730 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Company Dashboard</title>
+    <title>Morgen · Cockpit</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='rgb(91,45,142)'/><text x='32' y='40' font-family='Barlow,Arial' font-size='38' font-weight='900' fill='white' text-anchor='middle'>M</text><circle cx='50' cy='46' r='6' fill='rgb(216,254,86)'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
+    <style>
+      /* ============== Cockpit-only styling (bovenop merk-tokens uit styles.css) ============== */
+      .ck-aurora {
+        position: fixed; inset: -12%; z-index: 0; pointer-events: none;
+        background:
+          radial-gradient(circle at 18% 28%, rgba(155,111,207,.20) 0%, transparent 46%),
+          radial-gradient(circle at 82% 62%, rgba(216,254,86,.06) 0%, transparent 42%);
+        animation: ckDrift 20s ease-in-out infinite;
+      }
+      @keyframes ckDrift {
+        0%   { transform: translate(0,0) scale(1); }
+        50%  { transform: translate(4%,-3%) scale(1.08); }
+        100% { transform: translate(0,0) scale(1); }
+      }
+      @media (prefers-reduced-motion: reduce) { .ck-aurora { animation: none; } }
+
+      .ck { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 clamp(20px,4vw,48px) 60px; }
+
+      /* ---------- Hero ---------- */
+      .ck-hero { min-height: clamp(380px, 58vh, 620px); display: flex; flex-direction: column; padding-top: 28px; }
+      .ck-topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+      .ck-brand { font-weight: 900; font-size: 1.45rem; letter-spacing: .04em; color: var(--white); text-transform: uppercase; flex: 0 0 auto; }
+      .ck-brand span { color: var(--accent); }
+      .ck-clock { text-align: right; flex: 0 0 auto; }
+      .ck-clock__time { font-weight: 800; color: var(--white); font-size: 1.55rem; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+      .ck-clock__date { color: var(--text-secondary); font-size: .82rem; text-transform: capitalize; margin-top: 3px; }
+
+      .ck-search-trigger {
+        display: inline-flex; align-items: center; gap: 10px; height: 42px; padding: 0 16px;
+        border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass-bg-strong);
+        backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+        color: var(--text-secondary); cursor: pointer; font: inherit; font-size: .85rem; font-weight: 500;
+        transition: var(--transition); min-width: 0;
+      }
+      .ck-search-trigger:hover { color: var(--white); border-color: rgba(255,255,255,.32); }
+      .ck-search-trigger svg { width: 16px; height: 16px; flex: 0 0 auto; }
+      .ck-search-trigger__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ck-search-trigger kbd { font: inherit; font-size: .72rem; font-weight: 600; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--glass-border); color: var(--text-muted); flex: 0 0 auto; }
+      @media (max-width: 760px) { .ck-search-trigger__label, .ck-search-trigger kbd { display: none; } }
+
+      .ck-hero__main { margin-top: auto; padding-bottom: 6px; }
+      .ck-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
+      .ck-h1 { font-weight: 900; color: var(--white); font-size: clamp(2.6rem, 6vw, 5rem); line-height: .95; letter-spacing: .01em; margin: .28em 0 .22em; }
+      .ck-h1 b { color: var(--accent); font-weight: 900; }
+      .ck-sub { color: var(--text-secondary); font-size: clamp(1rem, 1.5vw, 1.22rem); max-width: 48ch; margin: 0; line-height: 1.6; }
+
+      /* ---------- Secties ---------- */
+      .ck-section { margin-top: 44px; }
+      .ck-section__head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
+      .ck-section__head .ck-eyebrow { white-space: nowrap; }
+      .ck-h2 { font-weight: 900; color: var(--white); font-size: clamp(1.4rem, 2.4vw, 2rem); margin: 0; line-height: 1; }
+
+      /* ---------- Linkgrid ---------- */
+      .ck-group { margin-bottom: 26px; }
+      .ck-group > .ck-eyebrow { display: block; margin-bottom: 12px; }
+      .ck-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(222px, 1fr)); gap: 14px; }
+      .ck-link {
+        display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+        padding: 15px 17px; border-radius: var(--radius);
+        background: var(--card-bg-strong);
+        backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.14);
+        color: var(--text-primary); transition: var(--transition);
+      }
+      .ck-link:hover { transform: translateY(-3px); border-color: rgba(255,255,255,.34); box-shadow: var(--shadow-hover), inset 0 1px 0 rgba(255,255,255,.24); }
+      .ck-link__icon {
+        width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px;
+        background: var(--glass-bg-strong); border: 1px solid var(--glass-border); color: var(--purple-light);
+        transition: var(--transition);
+      }
+      .ck-link__icon svg { width: 21px; height: 21px; }
+      .ck-link__icon .ck-art { display: none; width: 80%; height: 80%; object-fit: contain; }
+      .ck-link__icon.has-art .ck-art { display: block; }
+      .ck-link__icon.has-art svg { display: none; }
+      .ck-link:hover .ck-link__icon { color: var(--accent); border-color: rgba(216,254,86,.30); }
+      .ck-link:hover .ck-art { filter: drop-shadow(0 0 7px rgba(216,254,86,.4)); }
+      .ck-link__body { display: grid; gap: 2px; min-width: 0; }
+      .ck-link__body strong { font-weight: 800; color: var(--white); font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ck-link__sub { font-size: .78rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ck-link__arrow { color: var(--text-muted); display: grid; }
+      .ck-link__arrow svg { width: 18px; height: 18px; }
+      .ck-link:hover .ck-link__arrow { color: var(--accent); transform: translate(1px,-1px); }
+      .ck-link--soon { opacity: .5; cursor: default; }
+      .ck-link--soon:hover { transform: none; border-color: var(--card-border); box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.14); }
+      .ck-link--soon:hover .ck-link__icon { color: var(--purple-light); border-color: var(--glass-border); }
+
+      /* ---------- KPI-tegels (geld) ---------- */
+      .ck-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+      @media (max-width: 900px) { .ck-kpis { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 520px) { .ck-kpis { grid-template-columns: 1fr; } }
+      .ck-kpi { padding: 18px 20px; display: grid; gap: 9px; align-content: start; }
+      .ck-kpi__value { font-weight: 900; color: var(--white); font-size: 1.55rem; line-height: 1; letter-spacing: .005em; }
+      .ck-kpi__value small { font-weight: 700; color: var(--text-muted); font-size: .85rem; }
+      .ck-kpi__note { color: var(--text-secondary); font-size: .76rem; margin: 0; line-height: 1.45; }
+      .ck-kpi .progress-bar { height: 7px; }
+
+      /* ---------- Quick-add taak ---------- */
+      .ck-quickadd { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+      .ck-quickadd input, .ck-quickadd select {
+        height: 44px; padding: 0 14px; border-radius: 14px;
+        border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--white);
+        font-family: 'Barlow', sans-serif; font-size: .95rem; transition: var(--transition);
+      }
+      .ck-quickadd input:focus, .ck-quickadd select:focus { outline: none; border-color: var(--purple-light); box-shadow: 0 0 0 3px rgba(155,111,207,.22); }
+      .ck-quickadd input::placeholder { color: var(--text-muted); }
+      #qa-title { flex: 1 1 220px; min-width: 170px; }
+      #qa-project { flex: 0 1 210px; min-width: 150px; }
+      #qa-owner { flex: 0 0 auto; }
+      #qa-due { flex: 0 0 auto; color-scheme: dark; max-width: 160px; }
+      .ck-quickadd .button.primary { flex: 0 0 auto; }
+
+      /* ---------- Taken ---------- */
+      .ck-data__tasks { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+      .ck-col__title { font-weight: 800; color: var(--white); font-size: .95rem; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .05em; }
+      @media (max-width: 900px) { .ck-data__tasks { grid-template-columns: 1fr; } }
+
+      .ck-task { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--glass-bg); border: 1px solid var(--glass-border); transition: var(--transition); margin-bottom: 10px; }
+      .ck-task:hover { border-color: rgba(255,255,255,.30); }
+      .ck-check { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--purple-light); background: transparent; cursor: pointer; transition: var(--transition); display: grid; place-items: center; padding: 0; }
+      .ck-check::after { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: var(--transition); }
+      .ck-check:hover { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(216,254,86,.12); }
+      .ck-check:hover::after, .ck-check.done::after { transform: scale(1); }
+      .ck-task__link { display: grid; gap: 7px; min-width: 0; flex: 1; color: var(--text-primary); }
+      .ck-task__title { font-weight: 700; color: var(--white); font-size: .95rem; line-height: 1.35; }
+      .ck-task__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .78rem; }
+      .ck-task__meta .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+
+      /* ---------- Lopende projecten ---------- */
+      .ck-projects { margin-top: 24px; }
+      .ck-projects__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+      .ck-proj { display: grid; grid-template-columns: 132px 1fr auto; align-items: center; gap: 14px; padding: 13px 16px; border-radius: 14px; background: var(--card-bg-strong); border: 1px solid var(--card-border); box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.10); color: var(--text-primary); transition: var(--transition); margin-bottom: 8px; }
+      .ck-proj:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.30); }
+      .ck-proj__name { display: grid; gap: 1px; min-width: 0; }
+      .ck-proj__name strong { font-weight: 800; color: var(--white); font-size: .98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ck-proj__name .muted { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ck-proj__amt { font-weight: 800; color: var(--white); white-space: nowrap; font-size: 1rem; }
+      .ck-proj .badge { margin: 0; }
+      @media (max-width: 560px) { .ck-proj { grid-template-columns: 1fr auto; } .ck-proj .badge { grid-column: 1 / -1; justify-self: start; } }
+
+      .ck-empty { font-size: .85rem; padding: 6px 0; }
+
+      /* ---------- Cmd+K zoek ---------- */
+      .ck-cmdk { position: fixed; inset: 0; z-index: 50; display: none; align-items: flex-start; justify-content: center; padding: 13vh 16px 16px; background: rgba(12,8,24,.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+      .ck-cmdk.open { display: flex; }
+      .ck-cmdk__panel { width: min(640px, 100%); background: linear-gradient(180deg, rgba(35,22,60,.98), rgba(20,12,40,.98)); border: 1px solid var(--card-border); border-radius: var(--radius-lg); box-shadow: 0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(155,111,207,.2); overflow: hidden; }
+      .ck-cmdk__input { width: 100%; height: 56px; padding: 0 20px; background: transparent; border: none; border-bottom: 1px solid rgba(155,111,207,.2); color: var(--white); font-family: 'Barlow', sans-serif; font-size: 1.05rem; outline: none; }
+      .ck-cmdk__input::placeholder { color: var(--text-muted); }
+      .ck-cmdk__results { max-height: 46vh; overflow-y: auto; padding: 8px; }
+      .ck-cmdk__item { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border-radius: 12px; cursor: pointer; }
+      .ck-cmdk__item.sel, .ck-cmdk__item:hover { background: var(--card-bg-strong); }
+      .ck-cmdk__item .type { font-size: .6rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--glass-border); border-radius: 6px; padding: 3px 7px; flex: 0 0 auto; }
+      .ck-cmdk__item strong { font-weight: 700; color: var(--white); font-size: .95rem; }
+      .ck-cmdk__item .sub { color: var(--text-secondary); font-size: .78rem; }
+      .ck-cmdk__item > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ck-cmdk__empty { padding: 26px; color: var(--text-muted); text-align: center; font-size: .9rem; }
+      .ck-cmdk__hint { display: flex; gap: 16px; padding: 9px 18px 12px; color: var(--text-muted); font-size: .72rem; border-top: 1px solid rgba(155,111,207,.12); }
+
+      /* ---------- Footer ---------- */
+      .ck-footer { margin-top: 52px; padding-top: 22px; border-top: 1px solid rgba(155,111,207,.18); display: flex; justify-content: space-between; align-items: center; gap: 14px; color: var(--text-muted); font-size: .8rem; flex-wrap: wrap; }
+      .ck-footer a { color: var(--text-secondary); cursor: pointer; }
+      .ck-footer a:hover { color: var(--white); }
+      .ck-footer__brand b { color: var(--text-secondary); font-weight: 800; }
+      .ck-footer__brand b span { color: var(--accent); }
+
+      /* ---------- Toast ---------- */
+      .ck-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); background: var(--accent); color: #1A1A2E; font-weight: 700; font-size: .9rem; padding: 11px 20px; border-radius: 999px; box-shadow: 0 8px 30px rgba(216,254,86,.4); opacity: 0; pointer-events: none; transition: .3s cubic-bezier(.4,0,.2,1); z-index: 60; }
+      .ck-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+      /* ---------- Flyout (recente repos e.d.) ---------- */
+      button.ck-link { font-family: 'Barlow', sans-serif; text-align: left; width: 100%; cursor: pointer; }
+      .ck-link--flyout .ck-link__arrow svg { width: 20px; height: 20px; }
+      .ck-flyout { position: fixed; inset: 0; z-index: 55; display: none; }
+      .ck-flyout.open { display: block; }
+      .ck-flyout__panel { position: fixed; width: min(440px, calc(100vw - 24px)); max-height: 62vh; overflow: auto; background: linear-gradient(180deg, rgba(35,22,60,.99), rgba(20,12,40,.99)); border: 1px solid var(--card-border); border-radius: var(--radius-lg); box-shadow: 0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(155,111,207,.2); padding: 14px; }
+      .ck-flyout__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 0 4px; }
+      .ck-flyout__head strong { color: var(--white); font-weight: 800; font-size: .92rem; text-transform: uppercase; letter-spacing: .04em; }
+      .ck-flyout__head a { color: var(--accent); font-size: .78rem; font-weight: 600; cursor: pointer; }
+      .ck-flyout__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      @media (max-width: 520px) { .ck-flyout__grid { grid-template-columns: 1fr; } }
+      .ck-repo { display: grid; gap: 3px; padding: 11px 13px; border-radius: 12px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text-primary); transition: var(--transition); }
+      .ck-repo:hover { border-color: rgba(255,255,255,.3); transform: translateY(-1px); }
+      .ck-repo strong { color: var(--white); font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ck-repo .desc { color: var(--text-secondary); font-size: .74rem; line-height: 1.35; max-height: 2.7em; overflow: hidden; }
+      .ck-repo .meta { color: var(--text-muted); font-size: .7rem; display: flex; gap: 10px; margin-top: 1px; }
+      .ck-flyout__msg { grid-column: 1 / -1; color: var(--text-muted); padding: 18px; font-size: .85rem; text-align: center; }
+
+      /* ---------- AI-radar (nieuws) ---------- */
+      .ck-news { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      @media (max-width: 760px) { .ck-news { grid-template-columns: 1fr; } }
+      .ck-news__item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; padding: 11px 14px; border-radius: 12px; background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text-primary); transition: var(--transition); }
+      .ck-news__item:hover { border-color: rgba(255,255,255,.3); transform: translateY(-1px); }
+      .ck-news__src { font-size: .58rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--purple-light); border: 1px solid var(--glass-border); border-radius: 6px; padding: 3px 7px; white-space: nowrap; flex: 0 0 auto; }
+      .ck-news__t { color: var(--white); font-weight: 600; font-size: .86rem; line-height: 1.3; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .ck-news__time { color: var(--text-muted); font-size: .7rem; white-space: nowrap; }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="./src/main.js"></script>
+    <div class="ck-aurora" aria-hidden="true"></div>
+    <main class="ck">
+      <header class="ck-hero">
+        <div class="ck-topbar">
+          <a class="ck-brand" href="https://morgencompany.com" target="_blank" rel="noopener">MORGEN<span>.</span></a>
+          <button class="ck-search-trigger" id="search-trigger" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span class="ck-search-trigger__label">Zoek projecten, klanten, taken</span>
+            <kbd>⌘K</kbd>
+          </button>
+          <div class="ck-clock">
+            <div class="ck-clock__time" id="clock">--:--</div>
+            <div class="ck-clock__date" id="date">&nbsp;</div>
+          </div>
+        </div>
+        <div class="ck-hero__main">
+          <span class="ck-eyebrow">Cockpit</span>
+          <h1 class="ck-h1" id="greeting">Welkom</h1>
+        </div>
+      </header>
+
+      <section class="ck-section">
+        <div class="ck-section__head">
+          <span class="ck-eyebrow">Snel naar</span>
+          <h2 class="ck-h2">Tools</h2>
+        </div>
+        <div id="links"></div>
+      </section>
+
+      <section class="ck-section">
+        <div class="ck-section__head">
+          <span class="ck-eyebrow">Vandaag bij Morgen</span>
+          <h2 class="ck-h2">De stand van zaken</h2>
+        </div>
+
+        <div class="ck-kpis" id="kpis"><p class="muted ck-empty">Laden…</p></div>
+
+        <form class="ck-quickadd" id="quickadd" autocomplete="off">
+          <input type="text" id="qa-title" placeholder="Snel een taak toevoegen…" aria-label="Nieuwe taak" />
+          <select id="qa-project" required aria-label="Project"><option value="">— kies project —</option></select>
+          <select id="qa-owner" aria-label="Voor wie"></select>
+          <input type="date" id="qa-due" aria-label="Deadline" />
+          <button type="submit" class="button primary">+ Taak</button>
+        </form>
+
+        <div class="ck-data__tasks">
+          <div>
+            <h3 class="ck-col__title">Taken Harmen</h3>
+            <div id="tasks-harmen"><p class="muted ck-empty">Laden…</p></div>
+          </div>
+          <div>
+            <h3 class="ck-col__title">Taken Karin</h3>
+            <div id="tasks-karin"><p class="muted ck-empty">Laden…</p></div>
+          </div>
+        </div>
+
+        <div class="ck-projects">
+          <div class="ck-projects__head">
+            <h3 class="ck-col__title" style="margin:0">Lopende projecten</h3>
+            <span class="muted" id="proj-count"></span>
+          </div>
+          <div id="projects"><p class="muted ck-empty">Laden…</p></div>
+        </div>
+      </section>
+
+      <section class="ck-section">
+        <div class="ck-section__head">
+          <span class="ck-eyebrow">Nieuws</span>
+          <h2 class="ck-h2">AI-radar</h2>
+        </div>
+        <div id="news" class="ck-news"><p class="muted ck-empty">Laden…</p></div>
+      </section>
+
+      <footer class="ck-footer">
+        <span class="ck-footer__brand"><b>MORGEN<span>.</span></b> cockpit</span>
+        <span><a id="refresh">Ververs data</a> · <span id="updated">—</span></span>
+      </footer>
+    </main>
+
+    <div class="ck-flyout" id="flyout" aria-hidden="true">
+      <div class="ck-flyout__panel">
+        <div class="ck-flyout__head"><strong id="flyout-title"></strong><a id="flyout-all" target="_blank" rel="noopener">Alles ↗</a></div>
+        <div class="ck-flyout__grid" id="flyout-grid"></div>
+      </div>
+    </div>
+
+    <div class="ck-cmdk" id="cmdk" aria-hidden="true">
+      <div class="ck-cmdk__panel" role="dialog" aria-label="Zoeken">
+        <input id="cmdk-input" class="ck-cmdk__input" type="text" placeholder="Zoek projecten, klanten, taken…" autocomplete="off" />
+        <div id="cmdk-results" class="ck-cmdk__results"></div>
+        <div class="ck-cmdk__hint"><span>↑↓ navigeren</span><span>↵ openen</span><span>esc sluiten</span></div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { loadAll, subscribe, getDatabase, upsertTask, nextId } from './src/data/store.js';
+
+      /* ===== Constants & helpers (1-op-1 met het dashboard, src/app.js) ===== */
+      const REVENUE_GOAL = 25000;
+      const ACTIVE_STAGES = ['verkennen','1e_gesprek','offerte_verzonden','geaccepteerd','uitvoering'];
+      const COMMITTED_STAGES = ['geaccepteerd','uitvoering','afgerond'];
+      const REALIZED = ['ontvangen','gefactureerd'];
+      const PIPELINE_LABELS = {
+        verkennen: 'Verkennen', '1e_gesprek': '1e gesprek', offerte_verzonden: 'Offerte verzonden',
+        geaccepteerd: 'Geaccepteerd', uitvoering: 'Uitvoering', afgerond: 'Afgerond', on_hold: 'On hold', verloren: 'Verloren',
+      };
+      const PIPELINE_TONE = {
+        verkennen: 'info', '1e_gesprek': 'info', offerte_verzonden: 'warning', onderhandeling: 'warning',
+        geaccepteerd: 'success', uitvoering: 'success', afgerond: 'default', on_hold: 'default', verloren: 'danger',
+      };
+
+      const fmtCurrency = (v) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0);
+      const fmtDate = (v) => { if (!v) return '—'; const d = new Date(v); return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric' }); };
+      const escapeHtml = (v = '') => String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+      const relDays = (s) => { if (!s) return null; const t = new Date(); t.setHours(0,0,0,0); const d = new Date(s); d.setHours(0,0,0,0); return Math.round((d - t) / 86400000); };
+      const dueLabel = (s) => { const n = relDays(s); if (n === null) return ''; if (n < 0) return `${-n} dagen te laat`; if (n === 0) return 'Vandaag'; if (n === 1) return 'Morgen'; if (n <= 7) return `Over ${n} dagen`; return fmtDate(s); };
+      const dueTone = (s) => { const n = relDays(s); if (n === null) return 'default'; if (n < 0) return 'danger'; if (n <= 2) return 'warning'; return 'info'; };
+      const statusFromProgress = (p) => (p >= 0.75 ? 'success' : p >= 0.25 ? 'warning' : 'danger');
+      const byId = (id) => document.getElementById(id);
+
+      let toastTimer;
+      function toast(msg) {
+        let el = byId('ck-toast');
+        if (!el) { el = document.createElement('div'); el.id = 'ck-toast'; el.className = 'ck-toast'; document.body.appendChild(el); }
+        el.textContent = msg; el.classList.add('show');
+        clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+      }
+
+      /* ===== Iconen (Lucide-stijl, fallback tot de echte art in /assets/icons staat) ===== */
+      const ICONS = {
+        github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>',
+        netlify: '<path d="M13.73 4a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>',
+        lovable: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+        dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+        workflow: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+        globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+        website: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+        academy: '<path d="M21.42 10.92a1 1 0 0 0-.02-1.84L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.83l8.57 3.91a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
+        portal: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        drive: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+        slack: '<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>',
+        ext: '<path d="M7 17 17 7"/><path d="M8 7h9v9"/>',
+        go: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+        lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        supabase: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
+        chevron: '<path d="m6 9 6 6 6-6"/>',
+      };
+      const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+      // Toon echte icon-art uit /assets/icons als die bestaat; val anders terug op de lijn-iconen hierboven.
+      const iconBox = (key) => `<span class="ck-link__icon">`
+        + `<img class="ck-art" src="/assets/icons/icon-${key}.svg" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()">`
+        + icon(key)
+        + `</span>`;
+
+      /* ===== Klok + begroeting ===== */
+      const params = new URLSearchParams(location.search);
+      const who = (params.get('who') || '').toLowerCase();
+      const NAME = who === 'harmen' ? 'Harmen' : who === 'karin' ? 'Karin' : '';
+      const greetWord = (h) => (h < 6 ? 'Goedenacht' : h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond');
+      function tick() {
+        const now = new Date();
+        byId('clock').textContent = now.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+        byId('date').textContent = now.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+        byId('greeting').innerHTML = greetWord(now.getHours()) + (NAME ? `, <b>${NAME}</b>` : '');
+      }
+      tick();
+      setInterval(tick, 20000);
+
+      /* ===== Linkgrid ===== */
+      const LINKS = [
+        { group: 'Dev & deploy', items: [
+          { label: 'GitHub', sub: 'Recente repos', flyout: 'github', href: 'https://github.com/repos?q=contributed-by%3A%40me+sort%3Aupdated', icon: 'github' },
+          { label: 'Netlify', sub: 'Recente deploys', flyout: 'netlify', href: 'https://app.netlify.com', icon: 'netlify' },
+          { label: 'Supabase', sub: 'Projecten', flyout: 'supabase', href: 'https://supabase.com/dashboard/project/jeqvjtnxgxpjviwhjmzr', icon: 'supabase' },
+          { label: 'Lovable', sub: 'AI app builder', href: 'https://lovable.dev', icon: 'lovable', ext: true },
+        ]},
+        { group: 'Morgen apps', items: [
+          { label: 'Dashboard', sub: 'Omzet · projecten · taken', href: '/dashboard', icon: 'dashboard' },
+          { label: 'Interne workflow', sub: 'Git & samenwerken', href: 'https://github.com/morgenacademy/internal-workflow', icon: 'workflow', ext: true },
+          { label: 'Website', sub: 'morgencompany.com', href: 'https://morgencompany.com', icon: 'website', ext: true },
+          { label: 'Academy', sub: 'Cursist · morgenacademy.nl', href: 'https://morgenacademy.nl', icon: 'academy', ext: true },
+          { label: 'Academy', sub: 'Admin', href: '', icon: 'academy', ext: true },
+          { label: 'Klantportaal', sub: 'Admin', href: '', icon: 'portal', ext: true },
+          { label: 'Klantportaal', sub: 'Klant', href: '', icon: 'portal', ext: true },
+        ]},
+        { group: 'Tools', items: [
+          { label: 'Google Drive', sub: 'Bestanden', href: 'https://drive.google.com', icon: 'drive', ext: true },
+          { label: 'Slack', sub: 'Team chat', href: 'https://app.slack.com', icon: 'slack', ext: true },
+        ]},
+      ];
+      function linkCard(it) {
+        if (it.flyout) {
+          const inner = iconBox(it.icon)
+            + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)}</span></span>`;
+          return `<button type="button" class="ck-link ck-link--flyout" data-flyout="${it.flyout}">${inner}<span class="ck-link__arrow">${icon('chevron')}</span></button>`;
+        }
+        if (!it.href || it.href === '#') {
+          const inner = iconBox(it.icon)
+            + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)} · binnenkort</span></span>`;
+          return `<div class="ck-link ck-link--soon" aria-disabled="true">${inner}<span class="ck-link__arrow">${icon('lock')}</span></div>`;
+        }
+        const inner = iconBox(it.icon)
+          + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)}</span></span>`;
+        const tgt = it.ext ? ' target="_blank" rel="noopener"' : '';
+        return `<a class="ck-link" href="${it.href}"${tgt}>${inner}<span class="ck-link__arrow">${icon(it.ext ? 'ext' : 'go')}</span></a>`;
+      }
+      byId('links').innerHTML = LINKS.map((g) => `
+        <div class="ck-group">
+          <span class="ck-eyebrow">${escapeHtml(g.group)}</span>
+          <div class="ck-links">${g.items.map(linkCard).join('')}</div>
+        </div>`).join('');
+
+      /* ===== Quick-add taak ===== */
+      const QA_OWNERS = ['Harmen', 'Karin', 'Harmen & Karin'];
+      const defaultOwner = who === 'karin' ? 'Karin' : 'Harmen';
+      byId('qa-owner').innerHTML = QA_OWNERS.map((o) => `<option ${o === defaultOwner ? 'selected' : ''}>${o}</option>`).join('');
+      byId('quickadd').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const title = byId('qa-title').value.trim();
+        if (!title) return;
+        const project_id = byId('qa-project').value;
+        if (!project_id) { toast('Kies eerst een project'); byId('qa-project').focus(); return; }
+        const payload = {
+          id: nextId('tsk'), project_id, title, description: '',
+          status: 'open', priority: 'medium', due_date: byId('qa-due').value || null,
+          owner: byId('qa-owner').value, meeting_at: null, location: '', meeting_duration_minutes: 60,
+        };
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
+        try {
+          await upsertTask(payload);
+          byId('qa-title').value = ''; byId('qa-due').value = '';
+          toast('Taak toegevoegd ✓');
+        } catch (err) {
+          toast('Mislukt: ' + (err.message || err));
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      // Kies je een project, neem dan automatisch de eigenaar van dat project over.
+      byId('qa-project').addEventListener('change', (e) => {
+        const o = e.target.selectedOptions[0]?.dataset.owner;
+        if (o && QA_OWNERS.includes(o)) byId('qa-owner').value = o;
+      });
+
+      /* ===== Taak afvinken (event delegation) ===== */
+      document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.ck-check');
+        if (!btn) return;
+        e.preventDefault();
+        const task = getDatabase().tasks.find((t) => t.id === btn.dataset.taskId);
+        if (!task) return;
+        btn.classList.add('done');
+        try {
+          await upsertTask({ ...task, status: 'done' });
+          toast('Afgevinkt ✓');
+        } catch (err) {
+          btn.classList.remove('done');
+          toast('Mislukt: ' + (err.message || err));
+        }
+      });
+
+      /* ===== Live data render ===== */
+      function taskTile(t, projById) {
+        const proj = t.project_id ? projById[t.project_id] : null;
+        const href = proj ? `/dashboard#/projecten/${proj.id}` : '/dashboard#/taken';
+        const chip = t.due_date ? `<span class="badge badge-${dueTone(t.due_date)}">${escapeHtml(dueLabel(t.due_date))}</span>` : '';
+        const projName = proj ? `<span class="muted">${escapeHtml(proj.name || '')}</span>` : '';
+        return `<div class="ck-task">`
+          + `<button class="ck-check" data-task-id="${escapeHtml(t.id)}" title="Afvinken" aria-label="Afvinken"></button>`
+          + `<a class="ck-task__link" href="${href}"><span class="ck-task__title">${escapeHtml(t.title || 'Taak')}</span><span class="ck-task__meta">${projName}${chip}</span></a>`
+          + `</div>`;
+      }
+
+      function fillProjectSelect(db) {
+        const sel = byId('qa-project');
+        if (!sel || sel.dataset.filled === '1' || !db.projects.length) return;
+        const custById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+        const active = db.projects
+          .filter((p) => ACTIVE_STAGES.includes(p.pipeline_status))
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        sel.innerHTML = '<option value="">— kies project —</option>' + active.map((p) => {
+          const c = p.customer_id ? custById[p.customer_id] : null;
+          const label = (c?.name ? c.name + ' · ' : '') + (p.name || 'Project');
+          return `<option value="${escapeHtml(p.id)}" data-owner="${escapeHtml(p.owner || '')}">${escapeHtml(label)}</option>`;
+        }).join('');
+        sel.dataset.filled = '1';
+      }
+
+      function render(db) {
+        fillProjectSelect(db);
+        const kpisEl = byId('kpis');
+        if (db.error) {
+          kpisEl.innerHTML = `<div class="champ-tile ck-kpi" style="grid-column:1/-1"><span class="ck-eyebrow">Cijfers</span><p class="ck-kpi__note">Kon data niet laden — <a id="retry" style="color:var(--accent);cursor:pointer">opnieuw proberen</a></p></div>`;
+          const r = byId('retry'); if (r) r.onclick = () => loadAll();
+        } else if (db.loading && !db.finance.length) {
+          kpisEl.innerHTML = `<p class="muted ck-empty">Laden…</p>`;
+        } else {
+          const today = new Date().toISOString().slice(0, 10);
+          const year = today.slice(0, 4);
+          const yearStart = `${year}-01-01`, yearEnd = `${year}-12-31`;
+          const projById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
+          const incomeYear = db.finance.filter((f) => f.type === 'income' && f.date >= yearStart && f.date <= yearEnd);
+          const omzet = incomeYear.filter((f) => REALIZED.includes(f.payment_status)).reduce((s, f) => s + Number(f.amount), 0);
+          const pct = omzet / REVENUE_GOAL;
+          const status = statusFromProgress(pct);
+          const teOntvangen = incomeYear.filter((f) => f.payment_status === 'gefactureerd');
+          const teOntvangenSum = teOntvangen.reduce((s, f) => s + Number(f.amount), 0);
+          const teFactureren = incomeYear.filter((f) => {
+            const p = f.project_id ? projById[f.project_id] : null;
+            return p && COMMITTED_STAGES.includes(p.pipeline_status) && f.payment_status === 'verwacht';
+          }).reduce((s, f) => s + Number(f.amount), 0);
+          const ym = today.slice(0, 7);
+          const dPrev = new Date(today); dPrev.setDate(1); dPrev.setMonth(dPrev.getMonth() - 1);
+          const prevYm = dPrev.toISOString().slice(0, 7);
+          const monthIncome = (k) => db.finance.filter((f) => f.type === 'income' && REALIZED.includes(f.payment_status) && (f.date || '').slice(0, 7) === k).reduce((s, f) => s + Number(f.amount), 0);
+          const thisMonth = monthIncome(ym), lastMonth = monthIncome(prevYm);
+          const delta = thisMonth - lastMonth;
+          kpisEl.innerHTML = [
+            `<div class="champ-tile champ-tile--${status} ck-kpi"><span class="ck-eyebrow">Omzet ${year}</span><div class="ck-kpi__value">${fmtCurrency(omzet)} <small>/ ${fmtCurrency(REVENUE_GOAL)}</small></div><div class="progress-bar"><span style="width:${Math.min(100, Math.round(pct * 100))}%"></span></div><p class="ck-kpi__note">${Math.round(pct * 100)}% van het jaardoel</p></div>`,
+            `<div class="champ-tile ck-kpi"><span class="ck-eyebrow">Te ontvangen</span><div class="ck-kpi__value">${fmtCurrency(teOntvangenSum)}</div><p class="ck-kpi__note">${teOntvangen.length} ${teOntvangen.length === 1 ? 'factuur' : 'facturen'} verstuurd, nog niet binnen</p></div>`,
+            `<div class="champ-tile ck-kpi"><span class="ck-eyebrow">Te factureren</span><div class="ck-kpi__value">${fmtCurrency(teFactureren)}</div><p class="ck-kpi__note">toegezegd werk, nog niet gefactureerd</p></div>`,
+            `<div class="champ-tile ck-kpi"><span class="ck-eyebrow">Deze maand</span><div class="ck-kpi__value">${fmtCurrency(thisMonth)}</div><p class="ck-kpi__note">${delta >= 0 ? '▲' : '▼'} ${fmtCurrency(Math.abs(delta))} vs vorige maand</p></div>`,
+          ].join('');
+        }
+
+        // Taken Harmen / Karin
+        const projById = Object.fromEntries(db.projects.map((p) => [p.id, p]));
+        const open = db.tasks.filter((t) => t.status !== 'done');
+        const topFor = (name) => open
+          .filter((t) => (t.owner || '').toLowerCase().includes(name))
+          .sort((a, b) => (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31'))
+          .slice(0, 2);
+        for (const [name, id] of [['harmen', 'tasks-harmen'], ['karin', 'tasks-karin']]) {
+          const el = byId(id);
+          if (db.loading && !db.tasks.length) { el.innerHTML = `<p class="muted ck-empty">Laden…</p>`; continue; }
+          const list = topFor(name);
+          el.innerHTML = list.length ? list.map((t) => taskTile(t, projById)).join('') : `<p class="muted ck-empty">Geen open taken 🎉</p>`;
+        }
+
+        // Lopende projecten
+        const projEl = byId('projects');
+        const countEl = byId('proj-count');
+        if (db.loading && !db.projects.length) {
+          projEl.innerHTML = `<p class="muted ck-empty">Laden…</p>`;
+        } else {
+          const active = db.projects
+            .filter((p) => ACTIVE_STAGES.includes(p.pipeline_status))
+            .sort((a, b) => Number(b.actual_amount || b.forecast_amount || 0) - Number(a.actual_amount || a.forecast_amount || 0));
+          const custById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+          countEl.textContent = active.length ? `${active.length} actief` : '';
+          projEl.innerHTML = active.length ? active.map((p) => {
+            const cust = p.customer_id ? custById[p.customer_id] : null;
+            const amt = Number(p.actual_amount || p.forecast_amount || 0);
+            const stage = PIPELINE_LABELS[p.pipeline_status] || p.pipeline_status;
+            const tone = PIPELINE_TONE[p.pipeline_status] || 'info';
+            return `<a class="ck-proj" href="/dashboard#/projecten/${p.id}">`
+              + `<span class="badge badge-${tone}">${escapeHtml(stage)}</span>`
+              + `<span class="ck-proj__name"><strong>${escapeHtml(p.name || 'Project')}</strong>${cust ? `<span class="muted">${escapeHtml(cust.name)}</span>` : ''}</span>`
+              + `<span class="ck-proj__amt">${amt ? fmtCurrency(amt) : '<span class="muted">—</span>'}</span></a>`;
+          }).join('') : `<p class="muted ck-empty">Geen lopende projecten.</p>`;
+        }
+
+        if (!db.loading && !db.error) {
+          byId('updated').textContent = 'bijgewerkt ' + new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+        }
+      }
+
+      /* ===== Cmd+K zoek ===== */
+      const cmdk = { el: byId('cmdk'), input: byId('cmdk-input'), results: byId('cmdk-results'), filtered: [], items: [], sel: 0 };
+      function buildIndex() {
+        const db = getDatabase();
+        const custById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+        const items = [];
+        for (const p of db.projects) {
+          const c = p.customer_id ? custById[p.customer_id] : null;
+          items.push({ type: 'Project', label: p.name || 'Project', sub: c?.name || '', href: `/dashboard#/projecten/${p.id}` });
+        }
+        for (const c of db.customers) items.push({ type: 'Klant', label: c.name || 'Klant', sub: c.type || '', href: `/dashboard#/klanten/${c.id}` });
+        for (const t of db.tasks) {
+          if (t.status === 'done') continue;
+          const p = t.project_id ? db.projects.find((x) => x.id === t.project_id) : null;
+          items.push({ type: 'Taak', label: t.title || 'Taak', sub: p?.name || '', href: p ? `/dashboard#/projecten/${p.id}` : '/dashboard#/taken' });
+        }
+        return items;
+      }
+      function renderCmdk(q) {
+        const query = q.trim().toLowerCase();
+        let list = query
+          ? cmdk.items.filter((i) => i.label.toLowerCase().includes(query) || (i.sub || '').toLowerCase().includes(query))
+          : cmdk.items.filter((i) => i.type === 'Project').slice(0, 6);
+        list = list.slice(0, 8);
+        cmdk.filtered = list;
+        if (cmdk.sel >= list.length) cmdk.sel = 0;
+        cmdk.results.innerHTML = list.length
+          ? list.map((i, ix) => `<div class="ck-cmdk__item ${ix === cmdk.sel ? 'sel' : ''}" data-ix="${ix}"><span class="type">${i.type}</span><span><strong>${escapeHtml(i.label)}</strong>${i.sub ? ` <span class="sub">${escapeHtml(i.sub)}</span>` : ''}</span></div>`).join('')
+          : `<div class="ck-cmdk__empty">Niets gevonden voor "${escapeHtml(q)}"</div>`;
+      }
+      function openCmdk() {
+        cmdk.items = buildIndex();
+        cmdk.sel = 0;
+        cmdk.el.classList.add('open');
+        cmdk.input.value = '';
+        renderCmdk('');
+        cmdk.input.focus();
+      }
+      function closeCmdk() { cmdk.el.classList.remove('open'); }
+      function cmdkGo() { const it = cmdk.filtered[cmdk.sel]; if (it) window.location.href = it.href; }
+
+      byId('search-trigger').addEventListener('click', openCmdk);
+      cmdk.input.addEventListener('input', () => renderCmdk(cmdk.input.value));
+      cmdk.input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); cmdk.sel = Math.min(cmdk.sel + 1, cmdk.filtered.length - 1); renderCmdk(cmdk.input.value); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); cmdk.sel = Math.max(cmdk.sel - 1, 0); renderCmdk(cmdk.input.value); }
+        else if (e.key === 'Enter') { e.preventDefault(); cmdkGo(); }
+      });
+      cmdk.results.addEventListener('click', (e) => { const it = e.target.closest('.ck-cmdk__item'); if (!it) return; cmdk.sel = Number(it.dataset.ix); cmdkGo(); });
+      cmdk.el.addEventListener('click', (e) => { if (e.target === cmdk.el) closeCmdk(); });
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); cmdk.el.classList.contains('open') ? closeCmdk() : openCmdk(); return; }
+        if (e.key === 'Escape' && cmdk.el.classList.contains('open')) { closeCmdk(); return; }
+        if (e.key === '/' && !cmdk.el.classList.contains('open') && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) { e.preventDefault(); openCmdk(); }
+      });
+
+      /* ===== Flyout: recente repos (live, publieke GitHub-API) ===== */
+      function relTime(iso) {
+        if (!iso) return '';
+        const d = Math.floor((Date.now() - new Date(iso)) / 86400000);
+        if (d <= 0) return 'vandaag';
+        if (d === 1) return 'gisteren';
+        if (d < 30) return `${d} dgn geleden`;
+        return `${Math.floor(d / 30)} mnd geleden`;
+      }
+      async function fetchApi(path) {
+        const r = await fetch(path);
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'fout');
+        return d.items || [];
+      }
+      const FLY = {
+        github: {
+          title: 'Recente repos',
+          all: 'https://github.com/repos?q=contributed-by%3A%40me+sort%3Aupdated',
+          cache: null,
+          fetch: async () => {
+            const r = await fetch('https://api.github.com/users/morgenacademy/repos?sort=pushed&per_page=10');
+            if (!r.ok) throw new Error('GitHub ' + r.status);
+            return (await r.json()).map((x) => ({ name: x.name, desc: x.description || '', url: x.html_url, lang: x.language, pushed: x.pushed_at }));
+          },
+          row: (x) => `<a class="ck-repo" href="${x.url}" target="_blank" rel="noopener"><strong>${escapeHtml(x.name)}</strong>${x.desc ? `<span class="desc">${escapeHtml(x.desc)}</span>` : ''}<span class="meta">${x.lang ? `<span>${escapeHtml(x.lang)}</span>` : ''}<span>${relTime(x.pushed)}</span></span></a>`,
+        },
+        netlify: {
+          title: 'Recente deploys',
+          all: 'https://app.netlify.com',
+          cache: null,
+          fetch: () => fetchApi('/api/netlify-sites'),
+          row: (s) => `<a class="ck-repo" href="${escapeHtml(s.admin || s.url || '#')}" target="_blank" rel="noopener"><strong>${escapeHtml(s.name)}</strong>${s.url ? `<span class="desc">${escapeHtml(s.url.replace(/^https?:\/\//, ''))}</span>` : ''}<span class="meta">${s.state ? `<span>${escapeHtml(s.state)}</span>` : ''}<span>${relTime(s.updated)}</span></span></a>`,
+        },
+        supabase: {
+          title: 'Projecten',
+          all: 'https://supabase.com/dashboard',
+          cache: null,
+          fetch: () => fetchApi('/api/supabase-projects'),
+          row: (p) => `<a class="ck-repo" href="${escapeHtml(p.url || '#')}" target="_blank" rel="noopener"><strong>${escapeHtml(p.name)}</strong>${p.region ? `<span class="desc">${escapeHtml(p.region)}</span>` : ''}<span class="meta">${p.status ? `<span>${escapeHtml(p.status)}</span>` : ''}</span></a>`,
+        },
+      };
+      const flyoutEl = byId('flyout');
+      function positionFlyout(anchor) {
+        const r = anchor.getBoundingClientRect();
+        const panel = flyoutEl.querySelector('.ck-flyout__panel');
+        const w = Math.min(440, window.innerWidth - 24);
+        let left = r.left;
+        if (left + w > window.innerWidth - 12) left = window.innerWidth - 12 - w;
+        if (left < 12) left = 12;
+        panel.style.left = left + 'px';
+        panel.style.top = Math.min(r.bottom + 8, window.innerHeight - 140) + 'px';
+      }
+      async function openFlyout(anchor, key) {
+        const cfg = FLY[key];
+        if (!cfg) return;
+        byId('flyout-title').textContent = cfg.title;
+        byId('flyout-all').href = cfg.all;
+        byId('flyout-grid').innerHTML = `<div class="ck-flyout__msg">Laden…</div>`;
+        flyoutEl.classList.add('open');
+        positionFlyout(anchor);
+        try {
+          if (!cfg.cache) cfg.cache = await cfg.fetch();
+          byId('flyout-grid').innerHTML = cfg.cache.length ? cfg.cache.map(cfg.row).join('') : `<div class="ck-flyout__msg">Niets gevonden.</div>`;
+        } catch (e) {
+          byId('flyout-grid').innerHTML = `<div class="ck-flyout__msg">Kon niet laden (${escapeHtml(e.message || e)}).</div>`;
+        }
+      }
+      function closeFlyout() { flyoutEl.classList.remove('open'); }
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-flyout]');
+        if (btn) { e.preventDefault(); openFlyout(btn, btn.dataset.flyout); return; }
+        if (flyoutEl.classList.contains('open') && !e.target.closest('.ck-flyout__panel')) closeFlyout();
+      });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && flyoutEl.classList.contains('open')) closeFlyout(); });
+      window.addEventListener('resize', () => { if (flyoutEl.classList.contains('open')) closeFlyout(); });
+
+      /* ===== AI-radar nieuws ===== */
+      async function loadNews() {
+        const el = byId('news');
+        try {
+          const r = await fetch('/api/ai-news');
+          const d = await r.json();
+          if (!d.ok || !d.items?.length) { el.innerHTML = `<p class="muted ck-empty">Geen nieuws beschikbaar.</p>`; return; }
+          el.innerHTML = d.items.map((i) => `<a class="ck-news__item" href="${escapeHtml(i.link || '#')}" target="_blank" rel="noopener"><span class="ck-news__src">${escapeHtml(i.source)}</span><span class="ck-news__t">${escapeHtml(i.title)}</span><span class="ck-news__time">${i.date ? relTime(i.date) : ''}</span></a>`).join('');
+        } catch {
+          el.innerHTML = `<p class="muted ck-empty">AI-radar beschikbaar na deploy (Netlify Function).</p>`;
+        }
+      }
+
+      /* ===== Init ===== */
+      subscribe(render);
+      render(getDatabase());
+      loadAll();
+      loadNews();
+      byId('refresh').onclick = () => { byId('updated').textContent = 'verversen…'; loadAll(); loadNews(); };
+    </script>
   </body>
 </html>
