@@ -1,0 +1,8 @@
+# Cockpit (index.html) op /, dashboard-SPA op /dashboard. Buildless static site.
+[build]
+  publish = "."
+  command = ""
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
