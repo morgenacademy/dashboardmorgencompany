@@ -537,10 +537,10 @@
           const thisMonth = monthIncome(ym), lastMonth = monthIncome(prevYm);
           const delta = thisMonth - lastMonth;
           kpisEl.innerHTML = [
-            `<div class="champ-tile champ-tile--${status} ck-kpi"><span class="ck-eyebrow">Omzet ${year}</span><div class="ck-kpi__value">${fmtCurrency(omzet)} <small>/ ${fmtCurrency(REVENUE_GOAL)}</small></div><div class="progress-bar"><span style="width:${Math.min(100, Math.round(pct * 100))}%"></span></div><p class="ck-kpi__note">${Math.round(pct * 100)}% van het jaardoel</p></div>`,
-            `<div class="champ-tile ck-kpi"><span class="ck-eyebrow">Te ontvangen</span><div class="ck-kpi__value">${fmtCurrency(teOntvangenSum)}</div><p class="ck-kpi__note">${teOntvangen.length} ${teOntvangen.length === 1 ? 'factuur' : 'facturen'} verstuurd, nog niet binnen</p></div>`,
-            `<div class="champ-tile ck-kpi"><span class="ck-eyebrow">Te factureren</span><div class="ck-kpi__value">${fmtCurrency(teFactureren)}</div><p class="ck-kpi__note">toegezegd werk, nog niet gefactureerd</p></div>`,
-            `<div class="champ-tile ck-kpi"><span class="ck-eyebrow">Deze maand</span><div class="ck-kpi__value">${fmtCurrency(thisMonth)}</div><p class="ck-kpi__note">${delta >= 0 ? '▲' : '▼'} ${fmtCurrency(Math.abs(delta))} vs vorige maand</p></div>`,
+            `<a class="champ-tile champ-tile--${status} ck-kpi" href="/dashboard#/finance"><span class="ck-eyebrow">Omzet ${year}</span><div class="ck-kpi__value">${fmtCurrency(omzet)} <small>/ ${fmtCurrency(REVENUE_GOAL)}</small></div><div class="progress-bar"><span style="width:${Math.min(100, Math.round(pct * 100))}%"></span></div><p class="ck-kpi__note">${Math.round(pct * 100)}% van het jaardoel</p></a>`,
+            `<a class="champ-tile ck-kpi" href="/dashboard#/projecten?commercial=gefactureerd"><span class="ck-eyebrow">Te ontvangen</span><div class="ck-kpi__value">${fmtCurrency(teOntvangenSum)}</div><p class="ck-kpi__note">${teOntvangen.length} ${teOntvangen.length === 1 ? 'factuur' : 'facturen'} verstuurd, nog niet binnen</p></a>`,
+            `<a class="champ-tile ck-kpi" href="/dashboard#/projecten?commercial=toegezegd"><span class="ck-eyebrow">Te factureren</span><div class="ck-kpi__value">${fmtCurrency(teFactureren)}</div><p class="ck-kpi__note">toegezegd werk, nog niet gefactureerd</p></a>`,
+            `<a class="champ-tile ck-kpi" href="/dashboard#/finance"><span class="ck-eyebrow">Deze maand</span><div class="ck-kpi__value">${fmtCurrency(thisMonth)}</div><p class="ck-kpi__note">${delta >= 0 ? '▲' : '▼'} ${fmtCurrency(Math.abs(delta))} vs vorige maand</p></a>`,
           ].join('');
         }
 
