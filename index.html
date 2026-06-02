@@ -230,7 +230,6 @@
           </div>
         </div>
         <div class="ck-hero__main">
-          <span class="ck-eyebrow">Cockpit</span>
           <h1 class="ck-h1" id="greeting">Welkom</h1>
         </div>
       </header>
@@ -382,7 +381,7 @@
       // Altijd "Goedemorgen." — maar 's middags/avonds/'s nachts "morgen." doorstrepen + echte tijd erachter.
       function greetingHtml(h) {
         const period = h < 6 ? 'nacht' : h < 12 ? null : h < 18 ? 'middag' : 'avond';
-        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">morgen<span class="dot">.</span></span>`;
+        const morgen = `<span class="ck-morgen${period ? ' ck-morgen--struck' : ''}">Morgen<span class="dot">.</span></span>`;
         return `Goede${morgen}${period ? ' ' + period : ''}${NAME ? `, <b>${NAME}</b>` : ''}`;
       }
       function tick() {
@@ -400,7 +399,7 @@
           { label: 'GitHub', sub: 'Recente repos', flyout: 'github', href: 'https://github.com/repos?q=contributed-by%3A%40me+sort%3Aupdated', icon: 'github' },
           { label: 'Netlify', sub: 'Recente deploys', flyout: 'netlify', href: 'https://app.netlify.com', icon: 'netlify' },
           { label: 'Supabase', sub: 'Projecten', flyout: 'supabase', href: 'https://supabase.com/dashboard/project/jeqvjtnxgxpjviwhjmzr', icon: 'supabase' },
-          { label: 'Lovable', sub: 'AI app builder', href: 'https://lovable.dev', icon: 'lovable', ext: true },
+          { label: 'Lovable', sub: 'Projecten', href: 'https://lovable.dev/projects', icon: 'lovable', ext: true },
         ]},
         { group: 'Apps', items: [
           { label: 'Dashboard', sub: 'Omzet · projecten · taken', href: '/dashboard', icon: 'dashboard' },
