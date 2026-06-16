@@ -79,12 +79,13 @@ function paymentForFolder(name) {
   return null;
 }
 
+const _pdfCache = new Map();
 function pdfText(file) {
-  try {
-    return execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
-  } catch {
-    return '';
-  }
+  if (_pdfCache.has(file)) return _pdfCache.get(file);
+  let out = '';
+  try { out = execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }); } catch {}
+  _pdfCache.set(file, out);
+  return out;
 }
 
 // Parse Nederlands bedrag "€ 2.000,00" / "€ 10.500" → number.
@@ -168,6 +169,114 @@ function chooseOffertePdfs(files) {
   return withOfferte.length ? withOfferte : pdfs;
 }
 
+// ---------- Facturen (map 4./5. = klant-mappen met factuur-PDF's) ----------
+// Klant-mapnaam → bestaand customer-id, voor namen die niet tekstueel matchen.
+const CLIENT_ALIAS = {
+  'vereniging logistiek management': 'cus_vml',
+  'michielpro': 'cus_pinkroccade', // factuur via MichielPro = PinkRoccade-deal
+};
+
+function normName(s) {
+  return String(s).toLowerCase().replace(/\bb\.?\s*v\.?\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function pdfIsInvoice(text) { return /factuurdatum|factuurnummer|factuur\s+\d{6}-\d{3}/i.test(text); }
+function pdfIsOfferte(text) { return /\bofferte\b|\bvoorstel\b/i.test(text); }
+
+// Type van een submap: 'offerte' (offerte-PDF, oude conventie) of 'invoice'
+// (klant-map met facturen). Offerte heeft voorrang (bv. SoloSolis Vertaling).
+function classifyFolder(subPath, files) {
+  let hasInv = false, hasOff = false;
+  for (const f of files) {
+    if (extname(f).toLowerCase() !== '.pdf') continue;
+    const t = pdfText(join(subPath, f));
+    if (pdfIsOfferte(t)) hasOff = true;
+    if (pdfIsInvoice(t)) hasInv = true;
+  }
+  if (hasOff) return 'offerte';
+  if (hasInv) return 'invoice';
+  return 'offerte';
+}
+
+function parseInvoice(text) {
+  const num = (text.match(/Factuur\s+(\d{6}-\d{3})/i) || [])[1] || null;
+  const lines = text.split(/\r?\n/);
+  let ex = null;
+  for (const l of lines) if (/subtotaal|totaal ex/i.test(l)) { const a = parseEuro(l); if (a) ex = a; }
+  // "BTW 21% over € X" → X is de ex-btw basis (werkt voor beide factuur-formaten).
+  if (ex == null) { const m = text.match(/btw\s*\d+\s*%\s*over\s*(€\s*[\d.]+,\d{2})/i); if (m) ex = parseEuro(m[1]); }
+  if (ex == null) for (const l of lines) if (/totaal incl|factuurbedrag/i.test(l)) { const a = parseEuro(l); if (a) ex = a; }
+  const dm = text.match(/Factuurdatum\s+(\d{2})-(\d{2})-(\d{4})/i);
+  const date = dm ? `${dm[3]}-${dm[2]}-${dm[1]}` : null;
+  let desc = '';
+  const oi = lines.findIndex((l) => /Omschrijving/i.test(l));
+  if (oi >= 0 && lines[oi + 1]) desc = lines[oi + 1].replace(/\s{2,}.*$/, '').replace(/\s+/g, ' ').trim();
+  return { num, ex, date, desc };
+}
+
+// Verwerk de factuur-mappen in 4./5. → factuurregels op bestaande projecten.
+function buildInvoiceRecords(existingCustomers, existingProjects) {
+  const custByNorm = {};
+  for (const c of existingCustomers) custByNorm[normName(c.name)] = c;
+  const projByCust = {};
+  for (const p of existingProjects) (projByCust[p.customer_id] ||= []).push(p);
+
+  const invoices = [], flags = [], newCustomers = [], newProjects = [];
+  const seenCust = new Set(existingCustomers.map((c) => c.id));
+
+  for (const statusDir of listDirs(ACQ_DIR)) {
+    if (!statusDir.startsWith('4.') && !statusDir.startsWith('5.')) continue;
+    const payment = paymentForFolder(statusDir);
+    const statusPath = join(ACQ_DIR, statusDir);
+    for (const sub of listDirs(statusPath)) {
+      const subPath = join(statusPath, sub);
+      const files = listFiles(subPath);
+      if (classifyFolder(subPath, files) !== 'invoice') continue;
+
+      const clientRaw = sub.replace(/^\d{6}\s*-?\s*/, '').replace(/\s*-?\s*invoice\b.*$/i, '').replace(/morgenacademy/i, '').trim();
+      const aliasId = CLIENT_ALIAS[normName(clientRaw)];
+      const cust = aliasId ? existingCustomers.find((c) => c.id === aliasId) : custByNorm[normName(clientRaw)];
+
+      let customer_id;
+      if (cust) customer_id = cust.id;
+      else {
+        customer_id = `cus_${slugify(clientRaw)}`;
+        if (!seenCust.has(customer_id)) { seenCust.add(customer_id); newCustomers.push({ id: customer_id, name: clientRaw, type: 'klant', industry: '' }); }
+      }
+
+      const projs = projByCust[customer_id] || [];
+      let project_id;
+      if (projs.length === 1) project_id = projs[0].id;
+      else if (projs.length > 1) { flags.push(`${clientRaw}: ${projs.length} projecten — facturen NIET auto-verwerkt (handmatig reconcileren)`); continue; }
+      else {
+        project_id = `prj_${slugify(clientRaw)}`;
+        if (!newProjects.find((p) => p.id === project_id)) newProjects.push({ id: project_id, customer_id, name: `${clientRaw}: dienst`, pipeline_status: 'afgerond', owner: 'Karin' });
+      }
+
+      for (const f of files) {
+        if (extname(f).toLowerCase() !== '.pdf') continue;
+        const t = pdfText(join(subPath, f));
+        if (!pdfIsInvoice(t)) continue;
+        const inf = parseInvoice(t);
+        const key = inf.num || slugify(basename(f, extname(f)));
+        invoices.push({
+          finId: `fin_acq_${key}`,
+          customer_id, project_id, payment,
+          amount: inf.ex || 0,
+          date: inf.date || folderDate(sub) || folderDate(f),
+          num: inf.num || key,
+          desc: inf.desc,
+          owner: /harmen van heist/i.test(t) ? 'Harmen' : 'Karin', // factuur-afzender
+          client: cust ? cust.name : clientRaw,
+          sourceFile: `${statusDir}/${sub}/${f}`,
+        });
+        if (inf.ex == null) flags.push(`geen bedrag uit factuur: ${f}`);
+      }
+    }
+  }
+  return { invoices, flags, newCustomers, newProjects };
+}
+
 function buildRecords() {
   const records = [];
   const flags = [];
@@ -183,6 +292,8 @@ function buildRecords() {
       if (SKIP_FOLDERS.some((s) => sub.includes(s))) { flags.push(`skip (al in dashboard): ${sub}`); continue; }
       const subPath = join(statusPath, sub);
       const files = listFiles(subPath);
+      // Factuur-mappen (klant-map met facturen) in 4./5. → buildInvoiceRecords.
+      if ((statusDir.startsWith('4.') || statusDir.startsWith('5.')) && classifyFolder(subPath, files) === 'invoice') continue;
       const offertes = chooseOffertePdfs(files);
       if (!offertes.length) { flags.push(`geen offerte-PDF in: ${statusDir}/${sub}`); continue; }
       if (offertes.length > 1) flags.push(`${offertes.length} offertes in: ${statusDir}/${sub} (per PDF gesplitst)`);
@@ -250,115 +361,103 @@ async function main() {
 
   const { records, flags } = buildRecords();
 
-  // Toon overzicht.
+  // Bestaande data ophalen (nodig voor factuur-matching + seed-reconciliatie).
+  const existingCustomers = await sb('customers?select=id,name,type');
+  const existingProjects = await sb('projects?select=id,customer_id,name');
+  const existingFinance = await sb('finance_entries?select=id,project_id,payment_status,amount,type');
+
+  const { invoices, flags: invFlags, newCustomers: invNewCustomers, newProjects: invNewProjects } = buildInvoiceRecords(existingCustomers, existingProjects);
+
+  // Seed finance-regels die vervangen worden door Karin's facturen: income met
+  // status gefactureerd/ontvangen, op een project van een klant die nu facturen
+  // heeft, en niet zelf door de sync beheerd (fin_acq_*). Forecast (verwacht) blijft.
+  const projToCust = Object.fromEntries(existingProjects.map((p) => [p.id, p.customer_id]));
+  // Alleen klanten met een succesvol geparseerd factuurtotaal > 0, zodat een
+  // klant met een onleesbare factuur niet z'n bestaande seed-regel verliest.
+  const invTotalByCust = {};
+  for (const i of invoices) invTotalByCust[i.customer_id] = (invTotalByCust[i.customer_id] || 0) + i.amount;
+  const coveredCustomers = new Set(Object.entries(invTotalByCust).filter(([, t]) => t > 0).map(([c]) => c));
+  const seedDelete = existingFinance.filter((f) =>
+    f.type === 'income' &&
+    ['gefactureerd', 'ontvangen'].includes(f.payment_status) &&
+    !String(f.id).startsWith('fin_acq_') &&
+    coveredCustomers.has(projToCust[f.project_id]),
+  );
+
+  // ===== Overzicht: offertes =====
   const byStatus = {};
   for (const r of records) (byStatus[r.pipeline_status] ||= []).push(r);
   for (const [status, items] of Object.entries(byStatus)) {
     console.log(`── ${status} (${items.length})`);
     for (const r of items) {
       const amt = r.forecast_amount ? `€${r.forecast_amount.toLocaleString('nl-NL')}` : '—';
-      console.log(`   ${r.id.padEnd(20)} ${r.name.slice(0, 48).padEnd(48)} ${amt.padStart(9)}  [${r.customer_id}]`);
+      console.log(`   ${r.id.padEnd(22)} ${r.name.slice(0, 44).padEnd(44)} ${amt.padStart(9)}`);
     }
   }
-  if (flags.length) {
-    console.log(`\n⚑ Aandacht:`);
-    for (const f of flags) console.log(`   - ${f}`);
+
+  // ===== Overzicht: facturen (map 4./5.) =====
+  const custName = Object.fromEntries(existingCustomers.map((c) => [c.id, c.name]));
+  for (const nc of invNewCustomers) custName[nc.id] = nc.name;
+  const invByClient = {};
+  for (const i of invoices) (invByClient[i.customer_id] ||= []).push(i);
+  if (invoices.length) {
+    console.log(`\n── Facturen (map 4./5.)`);
+    for (const [cid, items] of Object.entries(invByClient)) {
+      const isNew = invNewCustomers.some((c) => c.id === cid);
+      const total = items.reduce((s, i) => s + i.amount, 0);
+      console.log(`   ${custName[cid] || cid}${isNew ? ' (NIEUWE klant)' : ''} — €${total.toLocaleString('nl-NL')}`);
+      for (const i of items) console.log(`      ${i.payment.padEnd(12)} ${('€' + i.amount.toLocaleString('nl-NL')).padStart(11)}  ${i.num}  ${(i.desc || '').slice(0, 28)}`);
+    }
+  }
+  if (invNewProjects.length) console.log(`\n── Nieuwe projecten: ${invNewProjects.map((p) => p.name).join(', ')}`);
+
+  // ===== Seed-regels die vervangen worden =====
+  if (seedDelete.length) {
+    console.log(`\n── Seed finance-regels die VERWIJDERD worden (vervangen door facturen):`);
+    for (const f of seedDelete) console.log(`   - ${String(f.id).padEnd(26)} ${f.payment_status.padEnd(12)} €${Number(f.amount).toLocaleString('nl-NL')}  [${projToCust[f.project_id]}]`);
   }
 
-  const finPlan = records.filter((r) => r.payment && !r.aliased);
-  const finSkip = records.filter((r) => r.payment && r.aliased);
-  if (finPlan.length || finSkip.length) {
-    console.log(`\n── Finance (factuurregels uit map 4./5.)`);
-    for (const r of finPlan) console.log(`   + fin_acq_${r.id.padEnd(18)} ${r.payment.padEnd(12)} €${(r.forecast_amount || 0).toLocaleString('nl-NL')}  ${r.name}`);
-    for (const r of finSkip) console.log(`   · ${r.name} → handmatig in Finance (gealiast project)`);
+  const allFlags = [...flags, ...invFlags];
+  if (allFlags.length) { console.log(`\n⚑ Aandacht:`); for (const f of allFlags) console.log(`   - ${f}`); }
+
+  const finPlan = records.filter((r) => r.payment && !r.aliased); // offerte-folders in 4./5.
+
+  if (DRY) {
+    console.log(`\nDRY: ${records.length} offertes · ${invoices.length} facturen · ${invNewCustomers.length} nieuwe klant(en) · ${seedDelete.length} seed-regel(s) te vervangen. Niets geschreven.\n`);
+    return;
   }
 
-  if (DRY) { console.log(`\n${records.length} offertes (dry run, niets geschreven).\n`); return; }
-
-  // 1) Klanten zorgen (alleen ontbrekende toevoegen).
-  const existingCustomers = await sb('customers?select=id');
+  // ===== LIVE =====
   const haveCust = new Set(existingCustomers.map((c) => c.id));
-  const newCustomers = [];
-  const seenNew = new Set();
-  for (const r of records) {
-    const c = r.customerObj;
-    if (!haveCust.has(c.id) && !seenNew.has(c.id)) {
-      seenNew.add(c.id);
-      newCustomers.push({ id: c.id, name: c.name, type: c.type || 'prospect', industry: c.industry || '', status: 'active', notes: 'Aangemaakt door acquisitie-sync.' });
-    }
-  }
-  if (newCustomers.length) {
-    await sb('customers', { method: 'POST', body: newCustomers, prefer: 'resolution=merge-duplicates,return=minimal' });
-    console.log(`\n➕ ${newCustomers.length} klant(en) aangemaakt: ${newCustomers.map((c) => c.name).join(', ')}`);
-  }
+  const newCustomers = [], seen = new Set();
+  const addCust = (c, note) => { if (c && !haveCust.has(c.id) && !seen.has(c.id)) { seen.add(c.id); newCustomers.push({ id: c.id, name: c.name, type: c.type || 'klant', industry: c.industry || '', status: 'active', notes: note }); } };
+  for (const r of records) addCust(r.customerObj, 'Aangemaakt door acquisitie-sync.');
+  for (const c of invNewCustomers) addCust(c, 'Aangemaakt door acquisitie-sync (factuur).');
+  if (newCustomers.length) { await sb('customers', { method: 'POST', body: newCustomers, prefer: 'resolution=merge-duplicates,return=minimal' }); console.log(`\n➕ ${newCustomers.length} klant(en): ${newCustomers.map((c) => c.name).join(', ')}`); }
 
-  // 2) Bestaande projecten (per id) → status patchen; nieuwe → volledig inserten.
+  // Offerte-projecten: bestaand → status patchen; nieuw → insert. + nieuwe factuur-projecten.
   const ids = [...new Set(records.map((r) => r.id))];
-  const existingProjects = ids.length ? await sb(`projects?select=id&id=in.(${ids.join(',')})`) : [];
-  const haveProj = new Set(existingProjects.map((p) => p.id));
-
+  const existIds = new Set((ids.length ? await sb(`projects?select=id&id=in.(${ids.join(',')})`) : []).map((p) => p.id));
   const toInsert = [];
   let patched = 0;
   for (const r of records) {
-    if (haveProj.has(r.id)) {
-      // Respecteer handmatige correcties: alleen status volgt de map.
-      await sb(`projects?id=eq.${r.id}`, { method: 'PATCH', body: { pipeline_status: r.pipeline_status }, prefer: 'return=minimal' });
-      patched++;
-    } else {
-      toInsert.push({
-        id: r.id,
-        customer_id: r.customer_id,
-        name: r.name,
-        description: '',
-        pipeline_status: r.pipeline_status,
-        product_type: r.product_type,
-        service_label: 'other',
-        forecast_amount: r.forecast_amount || 0,
-        actual_amount: 0,
-        value_amount: r.forecast_amount || 0,
-        pricing_model: 'project',
-        priority: 'medium',
-        owner: r.owner || 'Harmen',
-        lead_source: 'netwerk',
-        is_breakthrough: false,
-        estimated_hours: 0,
-        start_date: r.date || null,
-        accepted_date: r.pipeline_status === 'geaccepteerd' ? (r.date || null) : null,
-        next_action: '',
-        next_action_date: null,
-      });
-    }
+    if (existIds.has(r.id)) { await sb(`projects?id=eq.${r.id}`, { method: 'PATCH', body: { pipeline_status: r.pipeline_status }, prefer: 'return=minimal' }); patched++; }
+    else toInsert.push({ id: r.id, customer_id: r.customer_id, name: r.name, description: '', pipeline_status: r.pipeline_status, product_type: r.product_type, service_label: 'other', forecast_amount: r.forecast_amount || 0, actual_amount: 0, value_amount: r.forecast_amount || 0, pricing_model: 'project', priority: 'medium', owner: r.owner || 'Harmen', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: r.date || null, accepted_date: r.pipeline_status === 'geaccepteerd' ? (r.date || null) : null, next_action: '', next_action_date: null });
   }
-  if (toInsert.length) {
-    await sb('projects', { method: 'POST', body: toInsert, prefer: 'resolution=merge-duplicates,return=minimal' });
-  }
+  for (const p of invNewProjects) toInsert.push({ id: p.id, customer_id: p.customer_id, name: p.name, description: '', pipeline_status: p.pipeline_status, product_type: 'other', service_label: 'other', forecast_amount: 0, actual_amount: 0, value_amount: 0, pricing_model: 'project', priority: 'medium', owner: p.owner || 'Karin', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: null, accepted_date: null, next_action: '', next_action_date: null });
+  if (toInsert.length) await sb('projects', { method: 'POST', body: toInsert, prefer: 'resolution=merge-duplicates,return=minimal' });
 
-  // 3) Finance: niet-gealiaste offertes in map 4./5. krijgen een factuurregel
-  // (income), idempotent op een deterministische id. Gealiaste/legacy projecten
-  // beheren hun finance zelf en worden overgeslagen (geen dubbeltelling).
-  const finRows = records
-    .filter((r) => r.payment && !r.aliased)
-    .map((r) => ({
-      id: `fin_acq_${r.id}`,
-      date: r.date || null,
-      type: 'income',
-      description: `Offerte ${r.name}`,
-      amount: r.forecast_amount || 0,
-      category: '',
-      vendor: r.customerObj?.name || '',
-      project_id: r.id,
-      recurring: 'one_off',
-      source: 'invoice', // toegestane waarde; fin_acq_-id markeert sync-beheer
-      owner: r.owner || 'Harmen',
-      entity: 'Morgen',
-      factuur_status: '',
-      payment_status: r.payment,
-    }));
-  if (finRows.length) {
-    await sb('finance_entries', { method: 'POST', body: finRows, prefer: 'resolution=merge-duplicates,return=minimal' });
-  }
+  // Factuurregels schrijven — ADDITIEF EERST, vóór de destructieve seed-delete,
+  // zodat een schrijf-fout nooit data wist zonder vervanging.
+  const offerteFin = finPlan.map((r) => ({ id: `fin_acq_${r.id}`, date: r.date || '2026-01-01', type: 'income', description: `Offerte ${r.name}`, amount: r.forecast_amount || 0, category: '', vendor: r.customerObj?.name || '', project_id: r.id, recurring: 'one_off', source: 'invoice', owner: r.owner || 'Harmen', entity: 'Morgen', factuur_status: '', payment_status: r.payment }));
+  const invoiceFin = invoices.filter((i) => i.amount > 0).map((i) => ({ id: i.finId, date: i.date || '2026-01-01', type: 'income', description: `Factuur ${i.num}${i.desc ? ' — ' + i.desc : ''}`, amount: i.amount || 0, category: '', vendor: i.client, project_id: i.project_id, recurring: 'one_off', source: 'invoice', owner: i.owner || 'Karin', entity: 'Morgen', factuur_status: '', payment_status: i.payment }));
+  const allFin = [...offerteFin, ...invoiceFin];
+  if (allFin.length) await sb('finance_entries', { method: 'POST', body: allFin, prefer: 'resolution=merge-duplicates,return=minimal' });
 
-  console.log(`\n✅ Klaar: ${toInsert.length} nieuw, ${patched} bijgewerkt (status), ${finRows.length} factuurregel(s), ${records.length} totaal.\n`);
+  // Pas dáárna de seed-regels verwijderen (nu vervangen door bovenstaande facturen).
+  for (const f of seedDelete) await sb(`finance_entries?id=eq.${encodeURIComponent(f.id)}`, { method: 'DELETE', prefer: 'return=minimal' });
+
+  console.log(`\n✅ Klaar: ${toInsert.length} project(en) nieuw, ${patched} status-patch, ${allFin.length} factuurregel(s), ${seedDelete.length} seed verwijderd.\n`);
 }
 
 main().catch((e) => { console.error('\n❌ Sync mislukt:', e.message, '\n'); process.exit(1); });
