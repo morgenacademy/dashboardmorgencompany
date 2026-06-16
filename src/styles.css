@@ -875,7 +875,12 @@ textarea { resize: vertical; min-height: 130px; }
   gap: 12px;
   align-items: start;
 }
-.acq-col { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.acq-col {
+  padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
+}
 .acq-col__head {
   display: flex; justify-content: space-between; align-items: start; gap: 10px;
   padding-bottom: 12px; border-bottom: 1px solid var(--card-border);
@@ -890,7 +895,7 @@ textarea { resize: vertical; min-height: 130px; }
 .acq-card {
   display: grid; gap: 5px;
   padding: 13px 15px; border-radius: 14px;
-  background: var(--card-bg);
+  background: var(--card-bg-strong);
   border: 1px solid var(--card-border);
   box-shadow: inset 4px 0 0 var(--col-accent, var(--purple-light));
   color: var(--text-secondary); text-decoration: none;
