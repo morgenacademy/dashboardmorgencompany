@@ -285,11 +285,17 @@ function renderAcquisitie(db) {
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
   const valueOf = (p) => Number(p.actual_amount || p.forecast_amount || p.value_amount || 0);
 
-  // Finance per project (zelfde bron als de Finance-pagina): som income per payment_status.
+  // Finance per project (zelfde bron als de Finance-pagina): som income per
+  // payment_status. Gescoped op het lopende jaar, consistent met de Overview-tiles.
+  const fyear = new Date().toISOString().slice(0, 4);
+  const fys = `${fyear}-01-01`, fye = `${fyear}-12-31`;
   const finByProject = {};
+  const everInvoiced = new Set(); // project ooit gefactureerd/betaald (welk jaar dan ook)
   for (const f of db.finance) {
     if (f.type !== 'income' || !f.project_id) continue;
     if (!['gefactureerd', 'ontvangen', 'verwacht'].includes(f.payment_status)) continue;
+    if (f.payment_status !== 'verwacht') everInvoiced.add(f.project_id);
+    if (f.date && (f.date < fys || f.date > fye)) continue; // bedragen: alleen dit jaar
     const bucket = (finByProject[f.project_id] ||= { gefactureerd: 0, ontvangen: 0, verwacht: 0 });
     bucket[f.payment_status] += Number(f.amount || 0);
   }
@@ -317,7 +323,9 @@ function renderAcquisitie(db) {
       let placed = false;
       if (f.gefactureerd > 0) { buckets.invoiced.push({ p, amount: f.gefactureerd }); placed = true; }
       if (f.ontvangen > 0)    { buckets.paid.push({ p, amount: f.ontvangen }); placed = true; }
-      if (!placed) buckets.accepted.push({ p, amount: valueOf(p) || f.verwacht });
+      // Nog niet gefactureerd dit jaar én nooit eerder → Geaccepteerd. Ooit eerder
+      // betaald maar dit jaar niets → afgerond vorig jaar, niet op dit jaar-bord.
+      if (!placed && !everInvoiced.has(p.id)) buckets.accepted.push({ p, amount: valueOf(p) || f.verwacht });
     }
   }
 
@@ -375,7 +383,7 @@ function renderAcquisitie(db) {
       <div class="section-header">
         <div>
           <h1>Acquisitie</h1>
-          <p>Offerte-pijplijn — spiegelt je map <code>Morgen Academy/Acquisitie</code>. Openstaand: <strong>${fmtCurrency(pendingTotal)}</strong> over ${buckets.pending.length} offerte${buckets.pending.length === 1 ? '' : 's'}. <span class="muted">Gefactureerd &amp; Betaald komen uit Finance.</span></p>
+          <p>Offerte-pijplijn — spiegelt je map <code>Morgen Academy/Acquisitie</code>. Openstaand: <strong>${fmtCurrency(pendingTotal)}</strong> over ${buckets.pending.length} offerte${buckets.pending.length === 1 ? '' : 's'}. <span class="muted">Gefactureerd &amp; Betaald = ${fyear}, uit Finance.</span></p>
         </div>
       </div>
       <div class="acq-board">${cols}</div>
