@@ -38,18 +38,17 @@ const KNOWN_CLIENTS = [
   { id: 'cus_solosolis',   name: 'Solo Solis',       type: 'klant',    industry: 'E-commerce / retail', match: [/solo\s*solis/i] },
 ];
 
-// Mappen die al elders in het dashboard staan → niet syncen (geen dubbels).
-// Key = substring van de submap-naam.
-const SKIP_FOLDERS = [
-  'SoloSolis Vertaling', // = bestaand prj_solosolis_vert
-];
+// Mappen die volledig overgeslagen worden (zelden nodig — alias heeft voorkeur).
+const SKIP_FOLDERS = [];
 
 // Folder-offerte → bestaand (handmatig) project-id. Voorkomt dubbels met
-// projecten die al taken/finance hebben: de sync update die rij (status) i.p.v.
-// een parallelle prj_acq_*-rij te maken.
+// projecten die al taken/finance/historie hebben: de sync update die rij
+// (status volgt de map) i.p.v. een parallelle prj_acq_*-rij te maken.
 const ID_ALIAS = {
   prj_acq_260518: 'prj_tilburg_voorlopers', // Voorlopersprogramma — heeft al 8 taken
   prj_acq_160604: 'prj_tilburg_keynote',    // Keynote OR — heeft al 1 taak
+  prj_acq_260406: 'prj_solosolis_vert',     // Vertaalflow — bestaand, €6.000 + historie
+  prj_acq_2607002: 'prj_solosolis_stock',   // Binnenkomende voorraad = bestaand 'pending stock in admin panel'
 };
 
 // Per-offerte correcties (bedrag/naam/klant). Gevuld voor de backfill.
