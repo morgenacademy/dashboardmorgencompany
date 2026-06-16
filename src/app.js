@@ -281,12 +281,13 @@ function selectOptions(items, current, valueKey = 'value', labelKey = 'label') {
 
 // ============== Pages ==============
 
-function renderAcquisitie(db) {
+// Gedeelde funnel-logica: verdeelt projecten over de acquisitie-buckets. Gebruikt
+// door zowel het #/acquisitie-bord als de Overview-tiles, zodat die exact matchen.
+// Gefactureerd/Betaald komen uit finance (lopend jaar); een project kan in beide.
+function acquisitieBuckets(db) {
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
   const valueOf = (p) => Number(p.actual_amount || p.forecast_amount || p.value_amount || 0);
 
-  // Finance per project (zelfde bron als de Finance-pagina): som income per
-  // payment_status. Gescoped op het lopende jaar, consistent met de Overview-tiles.
   const fyear = new Date().toISOString().slice(0, 4);
   const fys = `${fyear}-01-01`, fye = `${fyear}-12-31`;
   const finByProject = {};
@@ -305,9 +306,6 @@ function renderAcquisitie(db) {
   const PENDING_STAGES = ['offerte_verzonden'];
   const WON_STAGES = ['geaccepteerd', 'uitvoering', 'afgerond', 'on_hold'];
 
-  // Verdeel projecten over de kolommen. Gefactureerd/Betaald komen uit finance,
-  // zodat de totalen exact matchen met de Finance-pagina. Een project kan zowel
-  // gefactureerd als (deels) betaald zijn → dan staat het in beide kolommen.
   const buckets = { lead: [], pending: [], lost: [], accepted: [], invoiced: [], paid: [] };
   for (const p of db.projects) {
     // Samenwerkingen (partner-trajecten) horen niet in de sales-funnel.
@@ -328,6 +326,11 @@ function renderAcquisitie(db) {
       if (!placed && !everInvoiced.has(p.id)) buckets.accepted.push({ p, amount: valueOf(p) || f.verwacht });
     }
   }
+  return { buckets, customersById };
+}
+
+function renderAcquisitie(db) {
+  const { buckets, customersById } = acquisitieBuckets(db);
 
   const card = ({ p, amount }) => {
     const c = customersById[p.customer_id];
@@ -453,20 +456,28 @@ function renderOverview(db) {
     return { total, trajecten: projectSet.size, klantenCount: klantenSet.size, tally };
   };
 
-  // 1) Offerte verzonden: alle projecten in POTENTIAL_STAGES, telt forecast
-  const potentieel = splitProjectsByOwner(
-    db.projects.filter((p) => POTENTIAL_STAGES.includes(p.pipeline_status)),
-    'forecast_amount',
-  );
-
-  // 2/3/4: vanuit income finance entries dit jaar
-  const incomeWithCommittedProject = incomeThisYear.filter((f) => {
-    const proj = f.project_id ? projectsById[f.project_id] : null;
-    return proj && COMMITTED_STAGES.includes(proj.pipeline_status);
-  });
-  const toegezegd    = splitFinanceByOwner(incomeWithCommittedProject.filter((f) => f.payment_status === 'verwacht'));
-  const gefactureerd = splitFinanceByOwner(incomeThisYear.filter((f) => f.payment_status === 'gefactureerd'));
-  const ontvangen    = splitFinanceByOwner(incomeThisYear.filter((f) => f.payment_status === 'ontvangen'));
+  // Stand van zaken — exact dezelfde funnel-logica als het #/acquisitie-bord,
+  // zodat deze tiles 1-op-1 matchen met de bord-kolommen (namen + bedragen).
+  const { buckets: acqBuckets } = acquisitieBuckets(db);
+  const tileFromBucket = (items) => {
+    const tally = { Karin: 0, Harmen: 0, Danielle: 0, Onverdeeld: 0 };
+    let total = 0;
+    const klanten = new Set();
+    for (const { p, amount } of items) {
+      if (!amount) continue;
+      total += amount;
+      klanten.add(p.customer_id);
+      const shares = ownerShares(p.owner);
+      const keys = Object.keys(shares);
+      if (!keys.length) tally.Onverdeeld += amount;
+      for (const k of keys) tally[k] = (tally[k] || 0) + amount * shares[k];
+    }
+    return { total, trajecten: items.length, klantenCount: klanten.size, tally };
+  };
+  const potentieel   = tileFromBucket(acqBuckets.pending);   // Pending
+  const toegezegd    = tileFromBucket(acqBuckets.accepted);  // Geaccepteerd
+  const gefactureerd = tileFromBucket(acqBuckets.invoiced);  // Gefactureerd
+  const ontvangen    = tileFromBucket(acqBuckets.paid);      // Betaald
 
   // ===== Cashflow / run-rate =====
   const monthlyIncome = db.finance
@@ -650,36 +661,36 @@ function renderOverview(db) {
 
         <div class="champagne__row champagne__row--four">
           ${stateTile({
-            title: 'Offerte verzonden',
+            title: 'Pending',
             count: `${potentieel.klantenCount} klant${potentieel.klantenCount === 1 ? '' : 'en'} · ${potentieel.trajecten} traject${potentieel.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(potentieel.total),
             tally: potentieel.tally,
             tone: 'danger',
-            href: '#/projecten?commercial=offerte_verzonden',
+            href: '#/acquisitie',
           })}
           ${stateTile({
-            title: 'Toegezegd',
+            title: 'Geaccepteerd',
             count: `${toegezegd.klantenCount} klant${toegezegd.klantenCount === 1 ? '' : 'en'} · ${toegezegd.trajecten} traject${toegezegd.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(toegezegd.total),
             tally: toegezegd.tally,
             tone: 'warning',
-            href: '#/projecten?commercial=toegezegd',
+            href: '#/acquisitie',
           })}
           ${stateTile({
-            title: 'Factuur verzonden',
+            title: 'Gefactureerd',
             count: `${gefactureerd.klantenCount} klant${gefactureerd.klantenCount === 1 ? '' : 'en'} · ${gefactureerd.trajecten} traject${gefactureerd.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(gefactureerd.total),
             tally: gefactureerd.tally,
             tone: 'warning',
-            href: '#/projecten?commercial=gefactureerd',
+            href: '#/acquisitie',
           })}
           ${stateTile({
-            title: 'Ontvangen',
+            title: 'Betaald',
             count: `${ontvangen.klantenCount} klant${ontvangen.klantenCount === 1 ? '' : 'en'} · ${ontvangen.trajecten} traject${ontvangen.trajecten === 1 ? '' : 'en'}`,
             value: fmtCurrency(ontvangen.total),
             tally: ontvangen.tally,
             tone: 'success',
-            href: '#/projecten?commercial=ontvangen',
+            href: '#/acquisitie',
           })}
         </div>
       </section>
