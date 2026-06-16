@@ -295,6 +295,13 @@ a.champ-tile:hover, a.label-tile:hover, a.metric-card:hover,
 
 /* ================= Task dialog ================= */
 
+.task-edit {
+  cursor: pointer;
+  text-decoration: underline dotted rgba(255,255,255,.25);
+  text-underline-offset: 3px;
+}
+.task-edit:hover { text-decoration-color: var(--accent); }
+
 .task-dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);

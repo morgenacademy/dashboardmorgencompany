@@ -843,6 +843,14 @@ function projectRow(p, customer, db, finMap) {
   const margin = revenueForMargin - directExpense - hours * INTERNAL_HOURLY_RATE;
   const marginPct = revenueForMargin ? margin / revenueForMargin : 0;
   const showMargin = revenueForMargin > 0 || hours > 0 || directExpense > 0;
+  // Volgende actie = eerstvolgende open taak (auto-actueel). next_action is handmatig
+  // en kan verouderen → alleen tonen als er geen open taak is én de datum niet verstreken is.
+  const nextTask = openTasks.slice().sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'))[0];
+  const actionHtml = nextTask
+    ? `${escapeHtml(nextTask.title)}${nextTask.due_date ? `<span class="muted"> · ${dueLabel(nextTask.due_date)}</span>` : ''}`
+    : (p.next_action && !(p.next_action_date && relDays(p.next_action_date) < 0)
+        ? `${escapeHtml(p.next_action)}${p.next_action_date ? `<span class="muted"> · ${dueLabel(p.next_action_date)}</span>` : ''}`
+        : '<span class="muted">—</span>');
   return `
     <a class="project-row" href="#/projecten/${escapeHtml(p.id)}">
       <span class="project-row__status">${funnelBadge(p, finMap)}</span>
@@ -857,7 +865,7 @@ function projectRow(p, customer, db, finMap) {
         ${showMargin ? `<span class="muted" style="font-size:.72rem;">marge ${fmtCurrency(margin)}${revenueForMargin ? ` · ${fmtNumber(marginPct * 100, 0)}%` : ''}</span>` : ''}
       </span>
       <span class="project-row__action">
-        ${p.next_action ? `${escapeHtml(p.next_action)}${p.next_action_date ? `<span class="muted"> · ${dueLabel(p.next_action_date)}</span>` : ''}` : '<span class="muted">—</span>'}
+        ${actionHtml}
       </span>
       <span class="project-row__meta">
         <span><strong>${openTasks.length}</strong> open</span>
@@ -1217,7 +1225,7 @@ function renderTaken(db) {
     const cust = proj ? customersById[proj.customer_id] : null;
     return [
       `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" />`,
-      `<strong>${escapeHtml(t.title)}</strong>`,
+      `<strong class="task-edit" data-action="edit-task" data-task-id="${escapeHtml(t.id)}" title="Klik om te bewerken">${escapeHtml(t.title)}</strong>`,
       `<a href="#/projecten/${escapeHtml(t.project_id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj?.name || '')}</a>`,
       t.due_date ? badge(dueLabel(t.due_date), tone) : '<span class="muted">—</span>',
       badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
@@ -1391,6 +1399,7 @@ function renderFinance(db) {
   const ontvangen = incomes.filter((f) => f.payment_status === 'ontvangen').reduce((s, f) => s + Number(f.amount), 0);
   const gefactureerd = incomes.filter((f) => f.payment_status === 'gefactureerd').reduce((s, f) => s + Number(f.amount), 0);
   const verwacht = incomes.filter((f) => f.payment_status === 'verwacht').reduce((s, f) => s + Number(f.amount), 0);
+  const omzet = ontvangen + gefactureerd + verwacht; // 'binnen': betaald + gefactureerd + toegezegd
 
   // ===== Finance per maand: income (gefactureerd+ontvangen) + expense + netto =====
   const yearForChart = filterYear || new Date().getFullYear().toString();
@@ -1474,6 +1483,7 @@ function renderFinance(db) {
       </div>
 
       <div class="metric-grid">
+        ${linkTile('Omzet',         fmtCurrency(omzet),        'betaald + gefactureerd + toegezegd', 'success', `#/finance?type=income&year=${yearSel}`)}
         ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', `#/finance?type=income&payment=ontvangen&year=${yearSel}`)}
         ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', `#/finance?type=income&payment=gefactureerd&year=${yearSel}`)}
         ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', `#/finance?type=income&payment=verwacht&year=${yearSel}`)}
@@ -1733,6 +1743,16 @@ function attachEvents() {
       if (!task) return;
       task.status = e.target.checked ? 'done' : 'open';
       await upsertTask(task);
+    });
+  });
+
+  document.querySelectorAll('[data-action="edit-task"]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.taskId;
+      const task = getDatabase().tasks.find((t) => t.id === id);
+      if (!task) return;
+      appState.editingTask = { ...task };
+      renderApp();
     });
   });
 
