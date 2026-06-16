@@ -331,16 +331,31 @@ function acquisitieBuckets(db) {
 
 function renderAcquisitie(db) {
   const fyear = new Date().toISOString().slice(0, 4);
+  const today = new Date().toISOString().slice(0, 10);
   const { buckets, customersById } = acquisitieBuckets(db);
+
+  // Volgende open taak per project (auto-actueel). next_action is handmatig en
+  // wordt stale — daarom tonen we 'm alleen als er geen open taak is én de datum
+  // niet in het verleden ligt.
+  const nextTaskOf = {};
+  for (const t of db.tasks) {
+    if (t.status === 'done') continue;
+    const cur = nextTaskOf[t.project_id];
+    if (!cur || (t.due_date || '9999') < (cur.due_date || '9999')) nextTaskOf[t.project_id] = t;
+  }
 
   const card = ({ p, amount }) => {
     const c = customersById[p.customer_id];
     const title = p.name.includes(':') ? p.name.slice(p.name.indexOf(':') + 1).trim() : p.name;
+    const nt = nextTaskOf[p.id];
+    const action = nt
+      ? `→ ${escapeHtml(nt.title)}${nt.due_date ? ` · ${escapeHtml(dueLabel(nt.due_date))}` : ''}`
+      : (p.next_action && (!p.next_action_date || p.next_action_date >= today) ? `→ ${escapeHtml(p.next_action)}` : '');
     return `
       <a class="acq-card" href="#/projecten/${escapeHtml(p.id)}">
         <span class="acq-card__top"><strong>${escapeHtml(c?.name || '—')}</strong><span>${fmtCurrency(amount)}</span></span>
         <span class="acq-card__title">${escapeHtml(title)}</span>
-        ${p.next_action ? `<span class="acq-card__meta">→ ${escapeHtml(p.next_action)}</span>` : ''}
+        ${action ? `<span class="acq-card__meta">${action}</span>` : ''}
       </a>`;
   };
 
@@ -813,6 +828,22 @@ function funnelBadge(p, finMap) {
   return badge(s.label, s.tone);
 }
 
+// Eerstvolgende open taak van een project (auto-actueel, vroegste deadline eerst).
+function nextOpenTask(db, projectId) {
+  return db.tasks
+    .filter((t) => t.project_id === projectId && t.status !== 'done')
+    .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'))[0] || null;
+}
+// 'Volgende actie'-HTML: open taak > niet-verlopen handmatige next_action > —.
+// next_action is handmatig en kan verouderen; een open taak is altijd leidend.
+function nextActionHtml(p, db) {
+  const nt = nextOpenTask(db, p.id);
+  if (nt) return `${escapeHtml(nt.title)}${nt.due_date ? `<span class="muted"> · ${dueLabel(nt.due_date)}</span>` : ''}`;
+  if (p.next_action && !(p.next_action_date && relDays(p.next_action_date) < 0))
+    return `${escapeHtml(p.next_action)}${p.next_action_date ? `<span class="muted"> · ${dueLabel(p.next_action_date)}</span>` : ''}`;
+  return '<span class="muted">—</span>';
+}
+
 function projectRow(p, customer, db, finMap) {
   const openTasks = db.tasks.filter((t) => t.project_id === p.id && t.status !== 'done');
   const overdue = openTasks.filter((t) => t.due_date && relDays(t.due_date) < 0);
@@ -828,6 +859,7 @@ function projectRow(p, customer, db, finMap) {
   const margin = revenueForMargin - directExpense - hours * INTERNAL_HOURLY_RATE;
   const marginPct = revenueForMargin ? margin / revenueForMargin : 0;
   const showMargin = revenueForMargin > 0 || hours > 0 || directExpense > 0;
+  const actionHtml = nextActionHtml(p, db);
   return `
     <a class="project-row" href="#/projecten/${escapeHtml(p.id)}">
       <span class="project-row__status">${funnelBadge(p, finMap)}</span>
@@ -842,7 +874,7 @@ function projectRow(p, customer, db, finMap) {
         ${showMargin ? `<span class="muted" style="font-size:.72rem;">marge ${fmtCurrency(margin)}${revenueForMargin ? ` · ${fmtNumber(marginPct * 100, 0)}%` : ''}</span>` : ''}
       </span>
       <span class="project-row__action">
-        ${p.next_action ? `${escapeHtml(p.next_action)}${p.next_action_date ? `<span class="muted"> · ${dueLabel(p.next_action_date)}</span>` : ''}` : '<span class="muted">—</span>'}
+        ${actionHtml}
       </span>
       <span class="project-row__meta">
         <span><strong>${openTasks.length}</strong> open</span>
@@ -1083,6 +1115,11 @@ function renderProjectDetail(db, projectId) {
   const tasks = db.tasks.filter((t) => t.project_id === projectId);
   const openTasks = tasks.filter((t) => t.status !== 'done');
   const doneTasks = tasks.filter((t) => t.status === 'done');
+  // Volgende actie: open taak leidend; verlopen handmatige next_action verbergen.
+  const nextAct = nextOpenTask(db, project.id);
+  const naStaleOk = project.next_action && !(project.next_action_date && relDays(project.next_action_date) < 0);
+  const naDate = nextAct ? nextAct.due_date : (naStaleOk ? project.next_action_date : null);
+  const naText = nextAct ? nextAct.title : (naStaleOk ? project.next_action : '');
   const finance = db.finance.filter((f) => f.project_id === projectId);
   const incomeTotal = finance.filter((f) => f.type === 'income').reduce((s, f) => s + Number(f.amount), 0);
   const directExpenseTotal = finance.filter((f) => f.type === 'expense').reduce((s, f) => s + Number(f.amount), 0);
@@ -1098,9 +1135,11 @@ function renderProjectDetail(db, projectId) {
       : '';
     return [
       `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" ${t.status === 'done' ? 'checked' : ''} />`,
-      `<strong style="${t.status === 'done' ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted">${escapeHtml(t.description)}</div>` : ''}${meetingInfo}`,
+      `<strong class="task-edit" data-action="edit-task" data-task-id="${escapeHtml(t.id)}" title="Klik om te bewerken" style="${t.status === 'done' ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${escapeHtml(t.title)}</strong>${t.description ? `<div class="muted">${escapeHtml(t.description)}</div>` : ''}${meetingInfo}`,
       badge(TASK_STATUSES.find((s) => s.value === t.status)?.label || t.status, t.status === 'done' ? 'success' : t.status === 'blocked' ? 'danger' : t.status === 'in_progress' ? 'warning' : 'info'),
-      t.due_date ? badge(dueLabel(t.due_date), dueTone(t.due_date)) : '<span class="muted">—</span>',
+      t.status === 'done'
+        ? (t.due_date ? `<span class="muted">${fmtDate(t.due_date)}</span>` : '<span class="muted">—</span>')
+        : (t.due_date ? badge(dueLabel(t.due_date), dueTone(t.due_date)) : '<span class="muted">—</span>'),
       badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
       escapeHtml(t.owner || ''),
       `<button type="button" class="button ghost" data-action="toggle-task-btn" data-task-id="${escapeHtml(t.id)}" title="${t.status === 'done' ? 'Heropenen' : 'Afvinken'}">${t.status === 'done' ? '↺' : '✓'}</button> <button type="button" class="button ghost" data-action="delete-task" data-task-id="${escapeHtml(t.id)}" title="Verwijderen">×</button>`,
@@ -1131,7 +1170,7 @@ function renderProjectDetail(db, projectId) {
         ${metricCard('Uren × €' + INTERNAL_HOURLY_RATE, fmtCurrency(hoursCost), `${fmtNumber(hours, 1)} uur geschat`)}
         ${metricCard('Marge', fmtCurrency(margin), revenueForMargin ? `${fmtNumber(marginPct * 100, 0)}% van revenue` : '—', margin > 0 ? 'success' : 'danger')}
         ${metricCard('Open taken', openTasks.length, `${doneTasks.length} klaar`)}
-        ${metricCard('Volgende actie', project.next_action_date ? dueLabel(project.next_action_date) : '—', project.next_action || '', dueTone(project.next_action_date))}
+        ${metricCard('Volgende actie', naDate ? dueLabel(naDate) : (naText ? '→' : '—'), naText, dueTone(naDate))}
       </div>
 
       <section class="panel">
@@ -1202,7 +1241,7 @@ function renderTaken(db) {
     const cust = proj ? customersById[proj.customer_id] : null;
     return [
       `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" />`,
-      `<strong>${escapeHtml(t.title)}</strong>`,
+      `<strong class="task-edit" data-action="edit-task" data-task-id="${escapeHtml(t.id)}" title="Klik om te bewerken">${escapeHtml(t.title)}</strong>`,
       `<a href="#/projecten/${escapeHtml(t.project_id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj?.name || '')}</a>`,
       t.due_date ? badge(dueLabel(t.due_date), tone) : '<span class="muted">—</span>',
       badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
@@ -1376,6 +1415,7 @@ function renderFinance(db) {
   const ontvangen = incomes.filter((f) => f.payment_status === 'ontvangen').reduce((s, f) => s + Number(f.amount), 0);
   const gefactureerd = incomes.filter((f) => f.payment_status === 'gefactureerd').reduce((s, f) => s + Number(f.amount), 0);
   const verwacht = incomes.filter((f) => f.payment_status === 'verwacht').reduce((s, f) => s + Number(f.amount), 0);
+  const omzet = ontvangen + gefactureerd + verwacht; // 'binnen': betaald + gefactureerd + toegezegd
 
   // ===== Finance per maand: income (gefactureerd+ontvangen) + expense + netto =====
   const yearForChart = filterYear || new Date().getFullYear().toString();
@@ -1459,6 +1499,7 @@ function renderFinance(db) {
       </div>
 
       <div class="metric-grid">
+        ${linkTile('Omzet',         fmtCurrency(omzet),        'betaald + gefactureerd + toegezegd', 'success', `#/finance?type=income&year=${yearSel}`)}
         ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', `#/finance?type=income&payment=ontvangen&year=${yearSel}`)}
         ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', `#/finance?type=income&payment=gefactureerd&year=${yearSel}`)}
         ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', `#/finance?type=income&payment=verwacht&year=${yearSel}`)}
@@ -1658,7 +1699,7 @@ function renderKlantDetail(db, customerId) {
             pipelineBadge(p.pipeline_status),
             badge(PRODUCT_TYPES.find((t) => t.value === p.product_type)?.label || p.product_type, 'info'),
             projectValueCell(p),
-            p.next_action ? `${escapeHtml(p.next_action)}${p.next_action_date ? ` · ${fmtDate(p.next_action_date)}` : ''}` : '<span class="muted">—</span>',
+            nextActionHtml(p, db),
           ]),
           { compact: true },
         )}
@@ -1718,6 +1759,16 @@ function attachEvents() {
       if (!task) return;
       task.status = e.target.checked ? 'done' : 'open';
       await upsertTask(task);
+    });
+  });
+
+  document.querySelectorAll('[data-action="edit-task"]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.taskId;
+      const task = getDatabase().tasks.find((t) => t.id === id);
+      if (!task) return;
+      appState.editingTask = { ...task };
+      renderApp();
     });
   });
 
