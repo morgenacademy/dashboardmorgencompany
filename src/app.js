@@ -406,13 +406,15 @@ function renderOverview(db) {
   const externalLeads = db.projects.filter((p) => p.lead_source === 'buiten_netwerk');
   const breakthroughs = db.projects.filter((p) => p.is_breakthrough);
   const incomeThisYear = db.finance.filter((f) => f.type === 'income' && f.date >= yearStart && f.date <= yearEnd);
-  const omzetGefactureerd = incomeThisYear
-    .filter((f) => ['ontvangen','gefactureerd'].includes(f.payment_status))
+  // "Binnen" = ontvangen + gefactureerd (nog niet betaald) + verwacht (toegezegd /
+  // onderhanden). Alles waarvan je uitgaat dat het komt, in dit jaar.
+  const omzetBinnen = incomeThisYear
+    .filter((f) => ['ontvangen', 'gefactureerd', 'verwacht'].includes(f.payment_status))
     .reduce((s, f) => s + Number(f.amount), 0);
 
   const goalLeadsPct = externalLeads.length / GOALS_2026.external_leads;
   const goalBreakPct = breakthroughs.length / GOALS_2026.breakthroughs;
-  const goalRevenuePct = omzetGefactureerd / GOALS_2026.revenue;
+  const goalRevenuePct = omzetBinnen / GOALS_2026.revenue;
 
   // ===== Stand van zaken in EUR — 4 commerciële statussen =====
   // 1) Offerte verzonden: forecast op projecten in pipeline (kan nog misgaan)
@@ -610,11 +612,12 @@ function renderOverview(db) {
     .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
     .slice(0, 8);
 
-  // Pipeline overzicht (active projecten gegroepeerd per status)
-  const byStage = ACTIVE_STAGES.map((stage) => ({
-    stage,
-    label: PIPELINE_STAGES.find((s) => s.value === stage).label,
-    items: activeProjects.filter((p) => p.pipeline_status === stage),
+  // Pipeline overzicht — zelfde funnel-buckets als het #/acquisitie-bord.
+  const byStage = FUNNEL_STAGES.map((st) => ({
+    key: st.key,
+    label: st.label,
+    items: acqBuckets[st.key] || [], // [{ p, amount }]
+    total: (acqBuckets[st.key] || []).reduce((s, it) => s + it.amount, 0),
   }));
 
   return `
@@ -630,7 +633,7 @@ function renderOverview(db) {
       <section class="champagne">
         <div class="champagne__head">
           <span class="eyebrow">Champagne momenten</span>
-          <h2>Doelen en status van het gekozen jaar</h2>
+          <h2>Doelen en status 2026</h2>
         </div>
 
         <div class="champagne__row">
@@ -653,10 +656,10 @@ function renderOverview(db) {
           ${goalTile({
             title: 'Omzet 2026',
             doel: fmtCurrency(GOALS_2026.revenue),
-            value: fmtCurrency(omzetGefactureerd),
+            value: fmtCurrency(omzetBinnen),
             pct: goalRevenuePct,
-            description: 'Berekend uit toegezegde en gefactureerde omzet binnen het gekozen jaar.',
-            href: '#/finance?type=income&payment=gefactureerd_ontvangen&year=2026',
+            description: "'Binnen' in 2026: ontvangen + gefactureerd + verwacht (toegezegd/onderhanden).",
+            href: '#/finance?type=income&year=2026',
           })}
         </div>
 
@@ -761,17 +764,16 @@ function renderOverview(db) {
           <div class="panel-heading"><div><h2>Pipeline</h2><p>Klik op een fase om de projecten te zien.</p></div></div>
           <div class="signal-stack">
             ${byStage.filter((g) => g.items.length).map((group) => {
-              const klanten = [...new Set(group.items.map((p) => customersById[p.customer_id]?.name).filter(Boolean))];
-              const totalValue = group.items.reduce((s, p) => s + Number(p.actual_amount || p.forecast_amount || p.value_amount || 0), 0);
+              const klanten = [...new Set(group.items.map((it) => customersById[it.p.customer_id]?.name).filter(Boolean))];
               return `
-              <a class="signal-card" href="#/projecten?pipeline_status=${escapeHtml(group.stage)}" style="text-decoration:none;color:inherit;">
+              <a class="signal-card" href="#/acquisitie" style="text-decoration:none;color:inherit;">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
                   <strong>${escapeHtml(group.label)}</strong>
-                  <span class="muted">${group.items.length} · ${fmtCurrency(totalValue)}</span>
+                  <span class="muted">${group.items.length} · ${fmtCurrency(group.total)}</span>
                 </div>
                 <div class="muted" style="font-size:.82rem;">${klanten.length ? klanten.map(escapeHtml).join(' · ') : '—'}</div>
               </a>`;
-            }).join('') || '<span class="muted">Geen actieve projecten.</span>'}
+            }).join('') || '<span class="muted">Geen projecten.</span>'}
           </div>
         </div>
       </div>
