@@ -884,7 +884,7 @@ textarea { resize: vertical; min-height: 130px; }
 }
 .acq-col__head {
   display: flex; justify-content: space-between; align-items: start; gap: 10px;
-  min-height: 64px; /* gelijke hoogte → eerste kaart lijnt uit over kolommen */
+  min-height: 74px; /* gelijke hoogte (max = 2-regelig sublabel) → eerste kaart lijnt uit over kolommen */
   padding-bottom: 12px; border-bottom: 1px solid var(--card-border);
 }
 .acq-col__head h2 { font-size: 1.05rem; margin: 0; color: var(--white); }
