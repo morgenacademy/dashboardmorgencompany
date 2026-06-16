@@ -1329,7 +1329,11 @@ function renderFinanceBreakdown(entries, q) {
                   return `<td style="text-align:right;${v ? '' : 'color:var(--text-muted);'}">${v ? fmtCurrency(v) : '—'}</td>`;
                 }).join('')}
                 <td style="text-align:right;"><strong>${fmtCurrency(r.total)}</strong></td>
-                <td>${r.recurring === 'monthly' ? '✓ Maandelijks' : r.recurring === 'one_off' ? 'Eenmalig' : escapeHtml(r.recurring || '')}</td>
+                <td>${(() => {
+                  const vals = monthsLbl.map((mm) => r.byMonth[mm.m]).filter((v) => v > 0);
+                  const sub = vals.length >= 3 && new Set(vals.map((v) => Math.round(v))).size === 1; // ≥3 mnd zelfde bedrag = abonnement
+                  return (r.recurring === 'monthly' || sub) ? '✓ Maandelijks' : r.recurring === 'one_off' ? 'Eenmalig' : escapeHtml(r.recurring || '');
+                })()}</td>
               </tr>
             `).join('') || `<tr><td colspan="${4 + monthsLbl.length}" class="empty-cell">Geen records</td></tr>`}
           </tbody>
