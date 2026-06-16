@@ -333,10 +333,11 @@ function renderAcquisitie(db) {
   };
 
   // Volgorde: Pending · Afgewezen · Geaccepteerd · Gefactureerd · Betaald.
+  // Afgewezen staat niet als kolom op het bord (voegt weinig toe), maar als
+  // compacte regel eronder.
   const columns = [
     { key: 'lead',     cls: 'lead',     title: 'Lead',         sub: 'Offerte te maken' },
     { key: 'pending',  cls: 'pending',  title: 'Pending',      sub: 'Offerte verzonden' },
-    { key: 'lost',     cls: 'lost',     title: 'Afgewezen',    sub: 'Update verzonden' },
     { key: 'accepted', cls: 'accepted', title: 'Geaccepteerd', sub: 'Nog niet gefactureerd' },
     { key: 'invoiced', cls: 'invoiced', title: 'Gefactureerd', sub: 'Wacht op betaling' },
     { key: 'paid',     cls: 'paid',     title: 'Betaald',      sub: 'Ontvangen' },
@@ -358,6 +359,16 @@ function renderAcquisitie(db) {
   }).join('');
 
   const pendingTotal = buckets.pending.reduce((s, it) => s + it.amount, 0);
+  const lostTotal = buckets.lost.reduce((s, it) => s + it.amount, 0);
+  const lostLine = buckets.lost.length ? `
+      <div class="acq-rejected">
+        <span class="acq-rejected__label">Afgewezen · ${buckets.lost.length} · ${fmtCurrency(lostTotal)}</span>
+        ${buckets.lost.sort((a, b) => b.amount - a.amount).map(({ p, amount }) => {
+          const c = customersById[p.customer_id];
+          const title = p.name.includes(':') ? p.name.slice(p.name.indexOf(':') + 1).trim() : p.name;
+          return `<a href="#/projecten/${escapeHtml(p.id)}">${escapeHtml(c?.name || '—')} — ${escapeHtml(title)} · ${fmtCurrency(amount)}</a>`;
+        }).join('')}
+      </div>` : '';
 
   return `
     <section class="page-section">
@@ -368,6 +379,7 @@ function renderAcquisitie(db) {
         </div>
       </div>
       <div class="acq-board">${cols}</div>
+      ${lostLine}
     </section>`;
 }
 
