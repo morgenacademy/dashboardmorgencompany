@@ -281,6 +281,60 @@ function selectOptions(items, current, valueKey = 'value', labelKey = 'label') {
 
 // ============== Pages ==============
 
+function renderAcquisitie(db) {
+  const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const valueOf = (p) => Number(p.actual_amount || p.forecast_amount || p.value_amount || 0);
+
+  const columns = [
+    { cls: 'pending',  title: 'Pending',      sub: 'Offerte verzonden', stages: ['offerte_verzonden'] },
+    { cls: 'accepted', title: 'Geaccepteerd', sub: 'Onderhanden',        stages: ['geaccepteerd', 'uitvoering'] },
+    { cls: 'lost',     title: 'Afgewezen',    sub: 'Update verzonden',   stages: ['verloren'] },
+    { cls: 'invoiced', title: 'Gefactureerd', sub: 'Afgerond',           stages: ['afgerond'] },
+  ];
+
+  const card = (p) => {
+    const c = customersById[p.customer_id];
+    const title = p.name.includes(':') ? p.name.slice(p.name.indexOf(':') + 1).trim() : p.name;
+    return `
+      <a class="acq-card" href="#/projecten/${escapeHtml(p.id)}">
+        <span class="acq-card__top"><strong>${escapeHtml(c?.name || '—')}</strong><span>${fmtCurrency(valueOf(p))}</span></span>
+        <span class="acq-card__title">${escapeHtml(title)}</span>
+        ${p.next_action ? `<span class="acq-card__meta">→ ${escapeHtml(p.next_action)}</span>` : ''}
+      </a>`;
+  };
+
+  const cols = columns.map((col) => {
+    const items = db.projects
+      .filter((p) => col.stages.includes(p.pipeline_status))
+      .sort((a, b) => valueOf(b) - valueOf(a));
+    const total = items.reduce((s, p) => s + valueOf(p), 0);
+    return `
+      <section class="panel acq-col acq-col--${col.cls}">
+        <div class="acq-col__head">
+          <div><h2>${col.title}</h2><p class="muted">${col.sub}</p></div>
+          <div class="acq-col__sum"><strong>${fmtCurrency(total)}</strong><span class="muted">${items.length} offerte${items.length === 1 ? '' : 's'}</span></div>
+        </div>
+        <div class="acq-col__body">
+          ${items.map(card).join('') || '<p class="empty-state" style="padding:14px 0;">Leeg</p>'}
+        </div>
+      </section>`;
+  }).join('');
+
+  const pending = db.projects.filter((p) => p.pipeline_status === 'offerte_verzonden');
+  const pendingTotal = pending.reduce((s, p) => s + valueOf(p), 0);
+
+  return `
+    <section class="page-section">
+      <div class="section-header">
+        <div>
+          <h1>Acquisitie</h1>
+          <p>Offerte-pijplijn — spiegelt je map <code>Morgen Academy/Acquisitie</code>. Openstaand: <strong>${fmtCurrency(pendingTotal)}</strong> over ${pending.length} offerte${pending.length === 1 ? '' : 's'}. Bijwerken vanuit de map: <code>node scripts/sync-acquisitie.mjs</code></p>
+        </div>
+      </div>
+      <div class="acq-board">${cols}</div>
+    </section>`;
+}
+
 function renderOverview(db) {
   const today = new Date().toISOString().slice(0, 10);
   const yearStart = today.slice(0, 4) + '-01-01';
@@ -1500,6 +1554,7 @@ function renderKlantDetail(db, customerId) {
 function renderNavigation(route) {
   const items = [
     ['/', 'Overview'],
+    ['/acquisitie', 'Acquisitie'],
     ['/projecten', 'Projecten'],
     ['/taken', 'Taken'],
     ['/finance', 'Finance'],
@@ -1519,6 +1574,7 @@ function renderPage(db, route) {
   if (route.parts[0] === 'projecten' && route.parts[1]) return renderProjectDetail(db, route.parts[1]);
   if (route.parts[0] === 'klanten' && route.parts[1]) return renderKlantDetail(db, route.parts[1]);
   switch (route.path) {
+    case '/acquisitie': return renderAcquisitie(db);
     case '/projecten': return renderProjectenList(db);
     case '/taken':     return renderTaken(db);
     case '/finance':   return renderFinance(db);
