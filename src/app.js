@@ -330,6 +330,7 @@ function acquisitieBuckets(db) {
 }
 
 function renderAcquisitie(db) {
+  const fyear = new Date().toISOString().slice(0, 4);
   const { buckets, customersById } = acquisitieBuckets(db);
 
   const card = ({ p, amount }) => {
@@ -405,13 +406,15 @@ function renderOverview(db) {
   const externalLeads = db.projects.filter((p) => p.lead_source === 'buiten_netwerk');
   const breakthroughs = db.projects.filter((p) => p.is_breakthrough);
   const incomeThisYear = db.finance.filter((f) => f.type === 'income' && f.date >= yearStart && f.date <= yearEnd);
-  const omzetGefactureerd = incomeThisYear
-    .filter((f) => ['ontvangen','gefactureerd'].includes(f.payment_status))
+  // "Binnen" = ontvangen + gefactureerd (nog niet betaald) + verwacht (toegezegd /
+  // onderhanden). Alles waarvan je uitgaat dat het komt, in dit jaar.
+  const omzetBinnen = incomeThisYear
+    .filter((f) => ['ontvangen', 'gefactureerd', 'verwacht'].includes(f.payment_status))
     .reduce((s, f) => s + Number(f.amount), 0);
 
   const goalLeadsPct = externalLeads.length / GOALS_2026.external_leads;
   const goalBreakPct = breakthroughs.length / GOALS_2026.breakthroughs;
-  const goalRevenuePct = omzetGefactureerd / GOALS_2026.revenue;
+  const goalRevenuePct = omzetBinnen / GOALS_2026.revenue;
 
   // ===== Stand van zaken in EUR — 4 commerciële statussen =====
   // 1) Offerte verzonden: forecast op projecten in pipeline (kan nog misgaan)
@@ -609,11 +612,12 @@ function renderOverview(db) {
     .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
     .slice(0, 8);
 
-  // Pipeline overzicht (active projecten gegroepeerd per status)
-  const byStage = ACTIVE_STAGES.map((stage) => ({
-    stage,
-    label: PIPELINE_STAGES.find((s) => s.value === stage).label,
-    items: activeProjects.filter((p) => p.pipeline_status === stage),
+  // Pipeline overzicht — zelfde funnel-buckets als het #/acquisitie-bord.
+  const byStage = FUNNEL_STAGES.map((st) => ({
+    key: st.key,
+    label: st.label,
+    items: acqBuckets[st.key] || [], // [{ p, amount }]
+    total: (acqBuckets[st.key] || []).reduce((s, it) => s + it.amount, 0),
   }));
 
   return `
@@ -629,7 +633,7 @@ function renderOverview(db) {
       <section class="champagne">
         <div class="champagne__head">
           <span class="eyebrow">Champagne momenten</span>
-          <h2>Doelen en status van het gekozen jaar</h2>
+          <h2>Doelen en status 2026</h2>
         </div>
 
         <div class="champagne__row">
@@ -652,10 +656,10 @@ function renderOverview(db) {
           ${goalTile({
             title: 'Omzet 2026',
             doel: fmtCurrency(GOALS_2026.revenue),
-            value: fmtCurrency(omzetGefactureerd),
+            value: fmtCurrency(omzetBinnen),
             pct: goalRevenuePct,
-            description: 'Berekend uit toegezegde en gefactureerde omzet binnen het gekozen jaar.',
-            href: '#/finance?type=income&payment=gefactureerd_ontvangen&year=2026',
+            description: "'Binnen' in 2026: ontvangen + gefactureerd + verwacht (toegezegd/onderhanden).",
+            href: '#/finance?type=income&year=2026',
           })}
         </div>
 
@@ -760,24 +764,56 @@ function renderOverview(db) {
           <div class="panel-heading"><div><h2>Pipeline</h2><p>Klik op een fase om de projecten te zien.</p></div></div>
           <div class="signal-stack">
             ${byStage.filter((g) => g.items.length).map((group) => {
-              const klanten = [...new Set(group.items.map((p) => customersById[p.customer_id]?.name).filter(Boolean))];
-              const totalValue = group.items.reduce((s, p) => s + Number(p.actual_amount || p.forecast_amount || p.value_amount || 0), 0);
+              const klanten = [...new Set(group.items.map((it) => customersById[it.p.customer_id]?.name).filter(Boolean))];
               return `
-              <a class="signal-card" href="#/projecten?pipeline_status=${escapeHtml(group.stage)}" style="text-decoration:none;color:inherit;">
+              <a class="signal-card" href="#/acquisitie" style="text-decoration:none;color:inherit;">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
                   <strong>${escapeHtml(group.label)}</strong>
-                  <span class="muted">${group.items.length} · ${fmtCurrency(totalValue)}</span>
+                  <span class="muted">${group.items.length} · ${fmtCurrency(group.total)}</span>
                 </div>
                 <div class="muted" style="font-size:.82rem;">${klanten.length ? klanten.map(escapeHtml).join(' · ') : '—'}</div>
               </a>`;
-            }).join('') || '<span class="muted">Geen actieve projecten.</span>'}
+            }).join('') || '<span class="muted">Geen projecten.</span>'}
           </div>
         </div>
       </div>
     </section>`;
 }
 
-function projectRow(p, customer, db) {
+// Funnel-buckets (gelijk aan het #/acquisitie-bord) — voor consistente groepering
+// + badges op de Projecten-lijst i.p.v. losse pipeline-stappen.
+const FUNNEL_STAGES = [
+  { key: 'lead',     label: 'Lead',         tone: 'info' },
+  { key: 'pending',  label: 'Pending',      tone: 'warning' },
+  { key: 'accepted', label: 'Geaccepteerd', tone: 'info' },
+  { key: 'invoiced', label: 'Gefactureerd', tone: 'warning' },
+  { key: 'paid',     label: 'Betaald',      tone: 'success' },
+  { key: 'lost',     label: 'Afgewezen',    tone: 'danger' },
+];
+function incomeByProjectAllTime(db) {
+  const m = {};
+  for (const f of db.finance) {
+    if (f.type !== 'income' || !f.project_id) continue;
+    if (f.payment_status !== 'gefactureerd' && f.payment_status !== 'ontvangen') continue;
+    (m[f.project_id] ||= { gefactureerd: 0, ontvangen: 0 })[f.payment_status] += Number(f.amount || 0);
+  }
+  return m;
+}
+function projectFunnelStage(p, finMap) {
+  if (p.pipeline_status === 'verloren') return 'lost';
+  if (p.pipeline_status === 'verkennen' || p.pipeline_status === '1e_gesprek') return 'lead';
+  if (p.pipeline_status === 'offerte_verzonden') return 'pending';
+  const f = finMap[p.id] || {};
+  if ((f.ontvangen || 0) > 0) return 'paid';
+  if ((f.gefactureerd || 0) > 0) return 'invoiced';
+  return 'accepted'; // gewonnen, nog niet gefactureerd
+}
+function funnelBadge(p, finMap) {
+  const s = FUNNEL_STAGES.find((x) => x.key === projectFunnelStage(p, finMap));
+  return badge(s.label, s.tone);
+}
+
+function projectRow(p, customer, db, finMap) {
   const openTasks = db.tasks.filter((t) => t.project_id === p.id && t.status !== 'done');
   const overdue = openTasks.filter((t) => t.due_date && relDays(t.due_date) < 0);
   const nextDueTask = openTasks.filter((t) => t.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
@@ -794,7 +830,7 @@ function projectRow(p, customer, db) {
   const showMargin = revenueForMargin > 0 || hours > 0 || directExpense > 0;
   return `
     <a class="project-row" href="#/projecten/${escapeHtml(p.id)}">
-      <span class="project-row__status">${pipelineBadge(p.pipeline_status)}</span>
+      <span class="project-row__status">${funnelBadge(p, finMap)}</span>
       <span class="project-row__name">
         <strong>${escapeHtml(p.name)}</strong>
         <span class="muted">${escapeHtml(customer?.name || '—')} · ${escapeHtml(typeLabel)}${p.priority === 'high' ? ` · <span style="color:#FF8FB6;">${escapeHtml(prioLabel)} prio</span>` : ''}</span>
@@ -820,6 +856,7 @@ function projectRow(p, customer, db) {
 function renderProjectenList(db) {
   const route = parseRoute();
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const finMap = incomeByProjectAllTime(db);
   const urlFilters = route.query || {};
   const filterStatus = urlFilters.pipeline_status || appState.filters.pipeline_status || '';
   const filterType = urlFilters.product_type || appState.filters.product_type || '';
@@ -878,11 +915,12 @@ function renderProjectenList(db) {
       })
       .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
   } else {
-    const order = [...ACTIVE_STAGES, 'afgerond', 'on_hold', 'verloren'];
-    groups = order.map((stage) => {
-      const items = projects.filter((p) => p.pipeline_status === stage);
-      return { key: stage, label: PIPELINE_STAGES.find((s) => s.value === stage).label, sublabel: '', items };
-    }).filter((g) => g.items.length);
+    groups = FUNNEL_STAGES.map((st) => ({
+      key: st.key,
+      label: st.label,
+      sublabel: '',
+      items: projects.filter((p) => projectFunnelStage(p, finMap) === st.key),
+    })).filter((g) => g.items.length);
   }
 
   const totalForecast = projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
@@ -956,7 +994,7 @@ function renderProjectenList(db) {
                 <span>Volgende actie</span>
                 <span style="text-align:right;">Taken</span>
               </div>
-              ${group.items.map((p) => projectRow(p, customersById[p.customer_id], db)).join('')}
+              ${group.items.map((p) => projectRow(p, customersById[p.customer_id], db, finMap)).join('')}
             </div>
           </section>`;
       }).join('')}
@@ -1217,33 +1255,33 @@ function renderFinanceBreakdown(entries, q) {
     return owner.includes(personFilter);
   });
 
-  // Groepeer per vendor + maand
-  const yearForChart = q.year || new Date().getFullYear().toString();
-  const ys = `${yearForChart}-01-01`;
-  const ye = `${yearForChart}-12-31`;
+  // Groepeer per vendor + maand-van-jaar (jaar-scope is al door renderFinance
+  // toegepast op `entries`, dus dit werkt zowel voor één jaar als voor Totaal).
   const monthsLbl = [];
   for (let mi = 0; mi < 12; mi++) {
-    const d = new Date(Number(yearForChart), mi, 1);
-    monthsLbl.push({ m: d.toISOString().slice(0, 7), label: d.toLocaleDateString('nl-NL', { month: 'short' }) });
+    const d = new Date(2000, mi, 1);
+    monthsLbl.push({ m: String(mi + 1).padStart(2, '0'), label: d.toLocaleDateString('nl-NL', { month: 'short' }) });
   }
 
   const rowsByVendor = {};
   for (const f of filtered) {
-    if (!f.date || f.date < ys || f.date > ye) continue;
+    if (!f.date) continue;
+    const mi = Number(f.date.slice(5, 7)) - 1;
+    if (mi < 0 || mi > 11) continue;
     const vendor = f.vendor || f.description || '—';
     if (!rowsByVendor[vendor]) rowsByVendor[vendor] = { vendor, category: f.category || '', recurring: f.recurring, total: 0, byMonth: {} };
     const row = rowsByVendor[vendor];
     const amount = Number(f.amount || 0);
     if (f.recurring === 'monthly') {
-      const fromIdx = Math.max(0, monthsLbl.findIndex((mm) => mm.m >= f.date.slice(0, 7)));
-      for (let i = fromIdx; i < monthsLbl.length; i++) {
-        row.byMonth[monthsLbl[i].m] = (row.byMonth[monthsLbl[i].m] || 0) + amount;
+      for (let i = mi; i < 12; i++) {
+        const key = monthsLbl[i].m;
+        row.byMonth[key] = (row.byMonth[key] || 0) + amount;
         row.total += amount;
       }
       if (f.category && !row.category) row.category = f.category;
     } else {
-      const m = f.date.slice(0, 7);
-      row.byMonth[m] = (row.byMonth[m] || 0) + amount;
+      const key = monthsLbl[mi].m;
+      row.byMonth[key] = (row.byMonth[key] || 0) + amount;
       row.total += amount;
     }
   }
@@ -1313,11 +1351,14 @@ function renderFinance(db) {
   const q = route.query || {};
   const filterType    = q.type || '';
   const filterPayment = q.payment || '';
-  const filterYear    = q.year || '';
+  const curYear = new Date().getFullYear().toString();
+  const yearSel = q.year || curYear;            // '2025' | '2026' | 'all' (default: huidig jaar)
+  const allYears = yearSel === 'all';
+  const filterYear = allYears ? '' : yearSel;
 
   let entries = db.finance;
   if (filterType) entries = entries.filter((f) => f.type === filterType);
-  if (filterYear) entries = entries.filter((f) => (f.date || '').slice(0, 4) === filterYear);
+  if (!allYears) entries = entries.filter((f) => (f.date || '').slice(0, 4) === yearSel);
   if (filterPayment === 'gefactureerd_ontvangen') {
     entries = entries.filter((f) => ['gefactureerd','ontvangen'].includes(f.payment_status));
   } else if (filterPayment) {
@@ -1389,7 +1430,7 @@ function renderFinance(db) {
   if (filterType === 'expense') activeFilters.push('Type: Expense');
   if (filterPayment === 'gefactureerd_ontvangen') activeFilters.push('Status: gefactureerd + ontvangen');
   else if (filterPayment) activeFilters.push(`Status: ${filterPayment}`);
-  if (filterYear) activeFilters.push(`Jaar: ${filterYear}`);
+  // Jaar zit niet in activeFilters (heeft eigen knoppen); breakdown blijft gated op type/status.
 
   const linkTile = (label, value, meta, tone, href) =>
     `<a class="metric-card metric-${tone} metric-card--link" href="${href}">
@@ -1398,22 +1439,27 @@ function renderFinance(db) {
        <span class="metric-meta">${escapeHtml(meta)}</span>
      </a>`;
 
+  const yearsPresent = [...new Set(db.finance.map((f) => (f.date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const yearHref = (y) => { const p = new URLSearchParams(q); p.set('year', y); return `#/finance?${p.toString()}`; };
+  const yearFilter = `<div class="person-toggle">${[...yearsPresent, 'all'].map((y) => `<a href="${yearHref(y)}" class="${yearSel === y ? 'active' : ''}">${y === 'all' ? 'Totaal' : y}</a>`).join('')}</div>`;
+
   return `
     <section class="page-section">
       <div class="section-header">
         <div>
           <h1>Finance</h1>
           <p>Income + expenses, gekoppeld aan projecten waar mogelijk.</p>
-          ${activeFilters.length ? `<p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${activeFilters.map((f) => `<span class="badge badge-info">${escapeHtml(f)}</span>`).join('')} <a href="#/finance" class="muted" style="font-size:.82rem;">Filters wissen</a></p>` : ''}
+          ${activeFilters.length ? `<p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${activeFilters.map((f) => `<span class="badge badge-info">${escapeHtml(f)}</span>`).join('')} <a href="#/finance?year=${yearSel}" class="muted" style="font-size:.82rem;">Filters wissen</a></p>` : ''}
         </div>
+        ${yearFilter}
       </div>
 
       <div class="metric-grid">
-        ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', '#/finance?type=income&payment=ontvangen')}
-        ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', '#/finance?type=income&payment=gefactureerd')}
-        ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', '#/finance?type=income&payment=verwacht')}
-        ${linkTile('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`,    'warning', '#/finance?type=expense')}
-        ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', '#/finance')}
+        ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', `#/finance?type=income&payment=ontvangen&year=${yearSel}`)}
+        ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', `#/finance?type=income&payment=gefactureerd&year=${yearSel}`)}
+        ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', `#/finance?type=income&payment=verwacht&year=${yearSel}`)}
+        ${linkTile('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`,    'warning', `#/finance?type=expense&year=${yearSel}`)}
+        ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', `#/finance?year=${yearSel}`)}
       </div>
 
       ${activeFilters.length ? renderFinanceBreakdown(entries, q) : ''}
