@@ -28,6 +28,15 @@ const STATUS_BY_PREFIX = [
   ['2.', 'geaccepteerd'],      // 2. Geaccepteerd
   ['3.', 'verloren'],          // 3. Afgewezen
   ['4.', 'afgerond'],          // 4. Gefactureerd
+  ['5.', 'afgerond'],          // 5. Betaald
+];
+
+// Statusmap-prefix → finance payment_status. De map 4./5. laat de sync een
+// factuurregel (income) schrijven, zodat het bord + Finance over de hele
+// levensloop kloppen. null = geen finance.
+const PAYMENT_BY_PREFIX = [
+  ['4.', 'gefactureerd'], // 4. Gefactureerd → wacht op betaling
+  ['5.', 'ontvangen'],    // 5. Betaald → ontvangen
 ];
 
 // Bekende klanten: gedetecteerd via substring in map-/bestandsnaam.
@@ -63,6 +72,11 @@ if (existsSync(overridesPath)) {
 function statusForFolder(name) {
   for (const [prefix, status] of STATUS_BY_PREFIX) if (name.startsWith(prefix)) return status;
   return null; // Archive e.d. → overslaan
+}
+
+function paymentForFolder(name) {
+  for (const [prefix, pay] of PAYMENT_BY_PREFIX) if (name.startsWith(prefix)) return pay;
+  return null;
 }
 
 function pdfText(file) {
@@ -162,6 +176,7 @@ function buildRecords() {
   for (const statusDir of listDirs(ACQ_DIR)) {
     const pipeline_status = statusForFolder(statusDir);
     if (!pipeline_status) continue;
+    const payment = paymentForFolder(statusDir);
     const statusPath = join(ACQ_DIR, statusDir);
 
     for (const sub of listDirs(statusPath)) {
@@ -197,6 +212,7 @@ function buildRecords() {
           customerObj: client || { id: customer_id, name: clientName, type: 'prospect', industry: '' },
           name: `${clientName}: ${title}`,
           pipeline_status,
+          payment,
           product_type: guessProductType(hay),
           forecast_amount: amount || 0,
           date,
@@ -247,6 +263,14 @@ async function main() {
   if (flags.length) {
     console.log(`\n⚑ Aandacht:`);
     for (const f of flags) console.log(`   - ${f}`);
+  }
+
+  const finPlan = records.filter((r) => r.payment && !r.aliased);
+  const finSkip = records.filter((r) => r.payment && r.aliased);
+  if (finPlan.length || finSkip.length) {
+    console.log(`\n── Finance (factuurregels uit map 4./5.)`);
+    for (const r of finPlan) console.log(`   + fin_acq_${r.id.padEnd(18)} ${r.payment.padEnd(12)} €${(r.forecast_amount || 0).toLocaleString('nl-NL')}  ${r.name}`);
+    for (const r of finSkip) console.log(`   · ${r.name} → handmatig in Finance (gealiast project)`);
   }
 
   if (DRY) { console.log(`\n${records.length} offertes (dry run, niets geschreven).\n`); return; }
@@ -309,7 +333,32 @@ async function main() {
     await sb('projects', { method: 'POST', body: toInsert, prefer: 'resolution=merge-duplicates,return=minimal' });
   }
 
-  console.log(`\n✅ Klaar: ${toInsert.length} nieuw, ${patched} bijgewerkt (status), ${records.length} totaal.\n`);
+  // 3) Finance: niet-gealiaste offertes in map 4./5. krijgen een factuurregel
+  // (income), idempotent op een deterministische id. Gealiaste/legacy projecten
+  // beheren hun finance zelf en worden overgeslagen (geen dubbeltelling).
+  const finRows = records
+    .filter((r) => r.payment && !r.aliased)
+    .map((r) => ({
+      id: `fin_acq_${r.id}`,
+      date: r.date || null,
+      type: 'income',
+      description: `Offerte ${r.name}`,
+      amount: r.forecast_amount || 0,
+      category: '',
+      vendor: r.customerObj?.name || '',
+      project_id: r.id,
+      recurring: 'one_off',
+      source: 'invoice', // toegestane waarde; fin_acq_-id markeert sync-beheer
+      owner: r.owner || 'Harmen',
+      entity: 'Morgen',
+      factuur_status: '',
+      payment_status: r.payment,
+    }));
+  if (finRows.length) {
+    await sb('finance_entries', { method: 'POST', body: finRows, prefer: 'resolution=merge-duplicates,return=minimal' });
+  }
+
+  console.log(`\n✅ Klaar: ${toInsert.length} nieuw, ${patched} bijgewerkt (status), ${finRows.length} factuurregel(s), ${records.length} totaal.\n`);
 }
 
 main().catch((e) => { console.error('\n❌ Sync mislukt:', e.message, '\n'); process.exit(1); });

@@ -49,13 +49,20 @@ er niet bij). Schrijven naar Supabase gebruikt dezelfde anon-key als de dashboar
 
 **Statusmap → `pipeline_status`:**
 
-| Statusmap | pipeline_status |
-|---|---|
-| `1. Pending` | `offerte_verzonden` |
-| `2. Geaccepteerd` | `geaccepteerd` |
-| `3. Afgewezen` | `verloren` |
-| `4. Gefactureerd` | `afgerond` |
-| `Archive` | overslaan |
+| Statusmap | pipeline_status | finance (income) |
+|---|---|---|
+| `1. Pending` | `offerte_verzonden` | — |
+| `2. Geaccepteerd` | `geaccepteerd` | — |
+| `3. Afgewezen` | `verloren` | — |
+| `4. Gefactureerd` | `afgerond` | factuurregel `gefactureerd` |
+| `5. Betaald` | `afgerond` | factuurregel `ontvangen` |
+| `Archive` | overslaan | — |
+
+Voor niet-gealiaste acq-offertes in `4.`/`5.` schrijft de sync een
+`finance_entries`-regel (income) met een deterministische id `fin_acq_<projectid>`,
+zodat het bord (Gefactureerd/Betaald) én de Finance-pagina over de hele levensloop
+kloppen. Gealiaste/legacy projecten beheren hun finance zelf en worden overgeslagen
+(geen dubbeltelling).
 
 **Mapconventie:** één offerte = eigen submap `JJMMDD Klant — Titel`, met de
 offerte-PDF (+ bron/factuur) erin. Granulariteit volgt daarmee de map: één regel per **offerte-PDF**. Niet-offertes worden genegeerd:
