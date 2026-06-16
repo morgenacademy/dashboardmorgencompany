@@ -302,6 +302,13 @@ a.champ-tile:hover, a.label-tile:hover, a.metric-card:hover,
 }
 .task-edit:hover { text-decoration-color: var(--accent); }
 
+tr.row-clickable { cursor: pointer; }
+tr.row-clickable:hover td { background: rgba(155,111,207,.10); }
+tr.row-clickable:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+/* checkbox en links binnen een klikbare rij houden hun eigen cursor */
+tr.row-clickable input,
+tr.row-clickable a { cursor: pointer; position: relative; z-index: 1; }
+
 .task-dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);

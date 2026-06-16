@@ -269,7 +269,7 @@ function table(headers, rows, options = {}) {
       <table class="data-table ${options.compact ? 'compact' : ''}">
         <thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${rows.length
-          ? rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')
+          ? rows.map((row, i) => `<tr ${options.rowAttrs ? options.rowAttrs(i) : ''}>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')
           : `<tr><td colspan="${headers.length}" class="empty-cell">Geen records</td></tr>`}</tbody>
       </table>
     </div>`;
@@ -1241,7 +1241,7 @@ function renderTaken(db) {
     const cust = proj ? customersById[proj.customer_id] : null;
     return [
       `<input type="checkbox" data-action="toggle-task" data-task-id="${escapeHtml(t.id)}" />`,
-      `<strong class="task-edit" data-action="edit-task" data-task-id="${escapeHtml(t.id)}" title="Klik om te bewerken">${escapeHtml(t.title)}</strong>`,
+      `<strong>${escapeHtml(t.title)}</strong>`,
       `<a href="#/projecten/${escapeHtml(t.project_id)}"><span class="muted">${escapeHtml(cust?.name || '')}</span> · ${escapeHtml(proj?.name || '')}</a>`,
       t.due_date ? badge(dueLabel(t.due_date), tone) : '<span class="muted">—</span>',
       badge(PRIORITIES.find((p) => p.value === t.priority)?.label || t.priority, t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'info'),
@@ -1251,7 +1251,10 @@ function renderTaken(db) {
   const renderGroup = (title, items, tone) => `
     <section class="panel">
       <div class="panel-heading"><div><h2>${title}</h2><p>${items.length} ta${items.length === 1 ? 'ak' : 'ken'}</p></div></div>
-      ${table(['','Taak','Project','Deadline','Prio'], items.map((t) => taskRowOpen(t, tone)), { compact: true })}
+      ${table(['','Taak','Project','Deadline','Prio'], items.map((t) => taskRowOpen(t, tone)), {
+        compact: true,
+        rowAttrs: (i) => `class="row-clickable" data-action="edit-task" data-task-id="${escapeHtml(items[i].id)}" title="Klik om te bewerken"`,
+      })}
     </section>`;
 
   const doneSection = done.length ? `
@@ -1763,7 +1766,9 @@ function attachEvents() {
   });
 
   document.querySelectorAll('[data-action="edit-task"]').forEach((el) => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      // Laat klikken op checkbox, projectlink of actieknop hun eigen ding doen.
+      if (e.target.closest('input, a, button, label')) return;
       const id = el.dataset.taskId;
       const task = getDatabase().tasks.find((t) => t.id === id);
       if (!task) return;
