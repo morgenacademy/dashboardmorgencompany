@@ -22,12 +22,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://jeqvjtnxgxpjviwhjmzr.s
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_uO70RUh9JTZZEykA_mUyzw_hyMNfi7-';
 const DRY = process.argv.includes('--dry');
 
-// Statusmap-prefix → pipeline_status. Volgorde telt: 2a. vóór 2.
+// Statusmap-prefix → pipeline_status.
 const STATUS_BY_PREFIX = [
-  ['1.',  'offerte_verzonden'],
-  ['2a.', 'verloren'],
-  ['2.',  'geaccepteerd'],
-  ['3.',  'afgerond'],
+  ['1.', 'offerte_verzonden'], // 1. Pending
+  ['2.', 'geaccepteerd'],      // 2. Geaccepteerd
+  ['3.', 'verloren'],          // 3. Afgewezen
+  ['4.', 'afgerond'],          // 4. Gefactureerd
 ];
 
 // Bekende klanten: gedetecteerd via substring in map-/bestandsnaam.

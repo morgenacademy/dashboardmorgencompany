@@ -51,13 +51,14 @@ er niet bij). Schrijven naar Supabase gebruikt dezelfde anon-key als de dashboar
 
 | Statusmap | pipeline_status |
 |---|---|
-| `1. Offertes Pending` | `offerte_verzonden` |
-| `2. Offertes Accepted - onderhanden` | `geaccepteerd` |
-| `2a. Offertes afgewezen : update verzonden` | `verloren` |
-| `3. Invoices sent - afgerond` | `afgerond` |
+| `1. Pending` | `offerte_verzonden` |
+| `2. Geaccepteerd` | `geaccepteerd` |
+| `3. Afgewezen` | `verloren` |
+| `4. Gefactureerd` | `afgerond` |
 | `Archive` | overslaan |
 
-**Granulariteit:** één regel per **offerte-PDF**. Niet-offertes worden genegeerd:
+**Mapconventie:** één offerte = eigen submap `JJMMDD Klant — Titel`, met de
+offerte-PDF (+ bron/factuur) erin. Granulariteit volgt daarmee de map: één regel per **offerte-PDF**. Niet-offertes worden genegeerd:
 `.pages`, `.docx`, `.zip`, en bestanden met `Invoice` in de naam.
 
 **Bestandsnaam → velden:** uit `JJMMDD[nn] Klant - Beschrijving.pdf` worden datum,
