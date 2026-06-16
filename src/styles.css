@@ -922,6 +922,17 @@ textarea { resize: vertical; min-height: 130px; }
 .acq-col--invoiced { --col-accent: #5BC0A8; }
 .acq-col--paid     { --col-accent: var(--accent); }
 
+.acq-rejected {
+  margin-top: 14px;
+  display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline;
+  padding: 11px 16px; border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(194, 80, 128, .18);
+}
+.acq-rejected__label { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--tone-danger); font-weight: 700; white-space: nowrap; }
+.acq-rejected a { font-size: .8rem; color: var(--text-muted); text-decoration: none; }
+.acq-rejected a:hover { color: var(--text-secondary); }
+
 /* ================= Responsive ================= */
 
 @media (max-width: 1100px) {
