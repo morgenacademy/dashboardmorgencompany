@@ -304,6 +304,8 @@ function renderAcquisitie(db) {
   // gefactureerd als (deels) betaald zijn → dan staat het in beide kolommen.
   const buckets = { lead: [], pending: [], lost: [], accepted: [], invoiced: [], paid: [] };
   for (const p of db.projects) {
+    // Samenwerkingen (partner-trajecten) horen niet in de sales-funnel.
+    if (customersById[p.customer_id]?.type === 'samenwerking') continue;
     const f = finOf(p.id);
     if (p.pipeline_status === 'verloren') {
       buckets.lost.push({ p, amount: valueOf(p) });
