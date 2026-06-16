@@ -331,16 +331,31 @@ function acquisitieBuckets(db) {
 
 function renderAcquisitie(db) {
   const fyear = new Date().toISOString().slice(0, 4);
+  const today = new Date().toISOString().slice(0, 10);
   const { buckets, customersById } = acquisitieBuckets(db);
+
+  // Volgende open taak per project (auto-actueel). next_action is handmatig en
+  // wordt stale — daarom tonen we 'm alleen als er geen open taak is én de datum
+  // niet in het verleden ligt.
+  const nextTaskOf = {};
+  for (const t of db.tasks) {
+    if (t.status === 'done') continue;
+    const cur = nextTaskOf[t.project_id];
+    if (!cur || (t.due_date || '9999') < (cur.due_date || '9999')) nextTaskOf[t.project_id] = t;
+  }
 
   const card = ({ p, amount }) => {
     const c = customersById[p.customer_id];
     const title = p.name.includes(':') ? p.name.slice(p.name.indexOf(':') + 1).trim() : p.name;
+    const nt = nextTaskOf[p.id];
+    const action = nt
+      ? `→ ${escapeHtml(nt.title)}${nt.due_date ? ` · ${escapeHtml(dueLabel(nt.due_date))}` : ''}`
+      : (p.next_action && (!p.next_action_date || p.next_action_date >= today) ? `→ ${escapeHtml(p.next_action)}` : '');
     return `
       <a class="acq-card" href="#/projecten/${escapeHtml(p.id)}">
         <span class="acq-card__top"><strong>${escapeHtml(c?.name || '—')}</strong><span>${fmtCurrency(amount)}</span></span>
         <span class="acq-card__title">${escapeHtml(title)}</span>
-        ${p.next_action ? `<span class="acq-card__meta">→ ${escapeHtml(p.next_action)}</span>` : ''}
+        ${action ? `<span class="acq-card__meta">${action}</span>` : ''}
       </a>`;
   };
 
