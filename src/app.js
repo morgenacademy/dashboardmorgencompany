@@ -778,7 +778,40 @@ function renderOverview(db) {
     </section>`;
 }
 
-function projectRow(p, customer, db) {
+// Funnel-buckets (gelijk aan het #/acquisitie-bord) — voor consistente groepering
+// + badges op de Projecten-lijst i.p.v. losse pipeline-stappen.
+const FUNNEL_STAGES = [
+  { key: 'lead',     label: 'Lead',         tone: 'info' },
+  { key: 'pending',  label: 'Pending',      tone: 'warning' },
+  { key: 'accepted', label: 'Geaccepteerd', tone: 'info' },
+  { key: 'invoiced', label: 'Gefactureerd', tone: 'warning' },
+  { key: 'paid',     label: 'Betaald',      tone: 'success' },
+  { key: 'lost',     label: 'Afgewezen',    tone: 'danger' },
+];
+function incomeByProjectAllTime(db) {
+  const m = {};
+  for (const f of db.finance) {
+    if (f.type !== 'income' || !f.project_id) continue;
+    if (f.payment_status !== 'gefactureerd' && f.payment_status !== 'ontvangen') continue;
+    (m[f.project_id] ||= { gefactureerd: 0, ontvangen: 0 })[f.payment_status] += Number(f.amount || 0);
+  }
+  return m;
+}
+function projectFunnelStage(p, finMap) {
+  if (p.pipeline_status === 'verloren') return 'lost';
+  if (p.pipeline_status === 'verkennen' || p.pipeline_status === '1e_gesprek') return 'lead';
+  if (p.pipeline_status === 'offerte_verzonden') return 'pending';
+  const f = finMap[p.id] || {};
+  if ((f.ontvangen || 0) > 0) return 'paid';
+  if ((f.gefactureerd || 0) > 0) return 'invoiced';
+  return 'accepted'; // gewonnen, nog niet gefactureerd
+}
+function funnelBadge(p, finMap) {
+  const s = FUNNEL_STAGES.find((x) => x.key === projectFunnelStage(p, finMap));
+  return badge(s.label, s.tone);
+}
+
+function projectRow(p, customer, db, finMap) {
   const openTasks = db.tasks.filter((t) => t.project_id === p.id && t.status !== 'done');
   const overdue = openTasks.filter((t) => t.due_date && relDays(t.due_date) < 0);
   const nextDueTask = openTasks.filter((t) => t.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
@@ -795,7 +828,7 @@ function projectRow(p, customer, db) {
   const showMargin = revenueForMargin > 0 || hours > 0 || directExpense > 0;
   return `
     <a class="project-row" href="#/projecten/${escapeHtml(p.id)}">
-      <span class="project-row__status">${pipelineBadge(p.pipeline_status)}</span>
+      <span class="project-row__status">${funnelBadge(p, finMap)}</span>
       <span class="project-row__name">
         <strong>${escapeHtml(p.name)}</strong>
         <span class="muted">${escapeHtml(customer?.name || '—')} · ${escapeHtml(typeLabel)}${p.priority === 'high' ? ` · <span style="color:#FF8FB6;">${escapeHtml(prioLabel)} prio</span>` : ''}</span>
@@ -821,6 +854,7 @@ function projectRow(p, customer, db) {
 function renderProjectenList(db) {
   const route = parseRoute();
   const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const finMap = incomeByProjectAllTime(db);
   const urlFilters = route.query || {};
   const filterStatus = urlFilters.pipeline_status || appState.filters.pipeline_status || '';
   const filterType = urlFilters.product_type || appState.filters.product_type || '';
@@ -879,11 +913,12 @@ function renderProjectenList(db) {
       })
       .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
   } else {
-    const order = [...ACTIVE_STAGES, 'afgerond', 'on_hold', 'verloren'];
-    groups = order.map((stage) => {
-      const items = projects.filter((p) => p.pipeline_status === stage);
-      return { key: stage, label: PIPELINE_STAGES.find((s) => s.value === stage).label, sublabel: '', items };
-    }).filter((g) => g.items.length);
+    groups = FUNNEL_STAGES.map((st) => ({
+      key: st.key,
+      label: st.label,
+      sublabel: '',
+      items: projects.filter((p) => projectFunnelStage(p, finMap) === st.key),
+    })).filter((g) => g.items.length);
   }
 
   const totalForecast = projects.reduce((s, p) => s + Number(p.forecast_amount || 0), 0);
@@ -957,7 +992,7 @@ function renderProjectenList(db) {
                 <span>Volgende actie</span>
                 <span style="text-align:right;">Taken</span>
               </div>
-              ${group.items.map((p) => projectRow(p, customersById[p.customer_id], db)).join('')}
+              ${group.items.map((p) => projectRow(p, customersById[p.customer_id], db, finMap)).join('')}
             </div>
           </section>`;
       }).join('')}
