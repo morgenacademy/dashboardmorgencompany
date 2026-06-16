@@ -867,6 +867,61 @@ textarea { resize: vertical; min-height: 130px; }
 .admin-grid { align-items: start; }
 .stack-form { display: grid; gap: 14px; }
 
+/* ================= Acquisitie-bord ================= */
+
+.acq-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.acq-col {
+  padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
+}
+.acq-col__head {
+  display: flex; justify-content: space-between; align-items: start; gap: 10px;
+  min-height: 64px; /* gelijke hoogte → eerste kaart lijnt uit over kolommen */
+  padding-bottom: 12px; border-bottom: 1px solid var(--card-border);
+}
+.acq-col__head h2 { font-size: 1.05rem; margin: 0; color: var(--white); }
+.acq-col__head p { margin: 3px 0 0; font-size: .68rem; text-transform: uppercase; letter-spacing: .12em; }
+.acq-col__sum { text-align: right; white-space: nowrap; }
+.acq-col__sum strong { display: block; color: var(--white); font-weight: 800; }
+.acq-col__sum span { font-size: .76rem; }
+.acq-col__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+
+.acq-card {
+  display: grid; gap: 5px;
+  min-width: 0; overflow-wrap: break-word;
+  padding: 13px 15px; border-radius: 14px;
+  background: var(--card-bg-strong);
+  border: 1px solid var(--card-border);
+  box-shadow: inset 4px 0 0 var(--col-accent, var(--purple-light));
+  color: var(--text-secondary); text-decoration: none;
+  transition: var(--transition);
+}
+.acq-card:hover {
+  background: var(--card-bg-strong);
+  box-shadow: inset 4px 0 0 var(--col-accent, var(--purple-light)), var(--shadow-hover);
+  transform: translateY(-1px);
+}
+.acq-card__top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.acq-card__top strong { color: var(--white); font-weight: 700; font-size: .92rem; min-width: 0; }
+.acq-card__top span { color: var(--accent); font-weight: 700; font-size: .85rem; white-space: nowrap; }
+.acq-card__title { font-size: .82rem; color: var(--text-secondary); }
+.acq-card__meta { font-size: .72rem; color: var(--text-muted); }
+
+.acq-col--lead     { --col-accent: var(--text-muted); }
+.acq-col--pending  { --col-accent: var(--purple-light); }
+.acq-col--lost     { --col-accent: var(--tone-danger); }
+.acq-col--accepted { --col-accent: #8FB6FF; }
+.acq-col--invoiced { --col-accent: #5BC0A8; }
+.acq-col--paid     { --col-accent: var(--accent); }
+
 /* ================= Responsive ================= */
 
 @media (max-width: 1100px) {

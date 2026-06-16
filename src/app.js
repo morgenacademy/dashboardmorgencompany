@@ -281,6 +281,96 @@ function selectOptions(items, current, valueKey = 'value', labelKey = 'label') {
 
 // ============== Pages ==============
 
+function renderAcquisitie(db) {
+  const customersById = Object.fromEntries(db.customers.map((c) => [c.id, c]));
+  const valueOf = (p) => Number(p.actual_amount || p.forecast_amount || p.value_amount || 0);
+
+  // Finance per project (zelfde bron als de Finance-pagina): som income per payment_status.
+  const finByProject = {};
+  for (const f of db.finance) {
+    if (f.type !== 'income' || !f.project_id) continue;
+    if (!['gefactureerd', 'ontvangen', 'verwacht'].includes(f.payment_status)) continue;
+    const bucket = (finByProject[f.project_id] ||= { gefactureerd: 0, ontvangen: 0, verwacht: 0 });
+    bucket[f.payment_status] += Number(f.amount || 0);
+  }
+  const finOf = (id) => finByProject[id] || { gefactureerd: 0, ontvangen: 0, verwacht: 0 };
+
+  const LEAD_STAGES = ['verkennen', '1e_gesprek'];
+  const PENDING_STAGES = ['offerte_verzonden'];
+  const WON_STAGES = ['geaccepteerd', 'uitvoering', 'afgerond', 'on_hold'];
+
+  // Verdeel projecten over de kolommen. Gefactureerd/Betaald komen uit finance,
+  // zodat de totalen exact matchen met de Finance-pagina. Een project kan zowel
+  // gefactureerd als (deels) betaald zijn → dan staat het in beide kolommen.
+  const buckets = { lead: [], pending: [], lost: [], accepted: [], invoiced: [], paid: [] };
+  for (const p of db.projects) {
+    // Samenwerkingen (partner-trajecten) horen niet in de sales-funnel.
+    if (customersById[p.customer_id]?.type === 'samenwerking') continue;
+    const f = finOf(p.id);
+    if (p.pipeline_status === 'verloren') {
+      buckets.lost.push({ p, amount: valueOf(p) });
+    } else if (LEAD_STAGES.includes(p.pipeline_status)) {
+      buckets.lead.push({ p, amount: valueOf(p) });
+    } else if (PENDING_STAGES.includes(p.pipeline_status)) {
+      buckets.pending.push({ p, amount: valueOf(p) });
+    } else if (WON_STAGES.includes(p.pipeline_status)) {
+      let placed = false;
+      if (f.gefactureerd > 0) { buckets.invoiced.push({ p, amount: f.gefactureerd }); placed = true; }
+      if (f.ontvangen > 0)    { buckets.paid.push({ p, amount: f.ontvangen }); placed = true; }
+      if (!placed) buckets.accepted.push({ p, amount: valueOf(p) || f.verwacht });
+    }
+  }
+
+  const card = ({ p, amount }) => {
+    const c = customersById[p.customer_id];
+    const title = p.name.includes(':') ? p.name.slice(p.name.indexOf(':') + 1).trim() : p.name;
+    return `
+      <a class="acq-card" href="#/projecten/${escapeHtml(p.id)}">
+        <span class="acq-card__top"><strong>${escapeHtml(c?.name || '—')}</strong><span>${fmtCurrency(amount)}</span></span>
+        <span class="acq-card__title">${escapeHtml(title)}</span>
+        ${p.next_action ? `<span class="acq-card__meta">→ ${escapeHtml(p.next_action)}</span>` : ''}
+      </a>`;
+  };
+
+  // Volgorde: Pending · Afgewezen · Geaccepteerd · Gefactureerd · Betaald.
+  const columns = [
+    { key: 'lead',     cls: 'lead',     title: 'Lead',         sub: 'Offerte te maken' },
+    { key: 'pending',  cls: 'pending',  title: 'Pending',      sub: 'Offerte verzonden' },
+    { key: 'lost',     cls: 'lost',     title: 'Afgewezen',    sub: 'Update verzonden' },
+    { key: 'accepted', cls: 'accepted', title: 'Geaccepteerd', sub: 'Nog niet gefactureerd' },
+    { key: 'invoiced', cls: 'invoiced', title: 'Gefactureerd', sub: 'Wacht op betaling' },
+    { key: 'paid',     cls: 'paid',     title: 'Betaald',      sub: 'Ontvangen' },
+  ];
+
+  const cols = columns.map((col) => {
+    const items = buckets[col.key].slice().sort((a, b) => b.amount - a.amount);
+    const total = items.reduce((s, it) => s + it.amount, 0);
+    return `
+      <section class="panel acq-col acq-col--${col.cls}">
+        <div class="acq-col__head">
+          <div><h2>${col.title}</h2><p class="muted">${col.sub}</p></div>
+          <div class="acq-col__sum"><strong>${fmtCurrency(total)}</strong><span class="muted">${items.length}</span></div>
+        </div>
+        <div class="acq-col__body">
+          ${items.map(card).join('') || '<p class="empty-state" style="padding:14px 0;">Leeg</p>'}
+        </div>
+      </section>`;
+  }).join('');
+
+  const pendingTotal = buckets.pending.reduce((s, it) => s + it.amount, 0);
+
+  return `
+    <section class="page-section">
+      <div class="section-header">
+        <div>
+          <h1>Acquisitie</h1>
+          <p>Offerte-pijplijn — spiegelt je map <code>Morgen Academy/Acquisitie</code>. Openstaand: <strong>${fmtCurrency(pendingTotal)}</strong> over ${buckets.pending.length} offerte${buckets.pending.length === 1 ? '' : 's'}. <span class="muted">Gefactureerd &amp; Betaald komen uit Finance.</span></p>
+        </div>
+      </div>
+      <div class="acq-board">${cols}</div>
+    </section>`;
+}
+
 function renderOverview(db) {
   const today = new Date().toISOString().slice(0, 10);
   const yearStart = today.slice(0, 4) + '-01-01';
@@ -1500,6 +1590,7 @@ function renderKlantDetail(db, customerId) {
 function renderNavigation(route) {
   const items = [
     ['/', 'Overview'],
+    ['/acquisitie', 'Acquisitie'],
     ['/projecten', 'Projecten'],
     ['/taken', 'Taken'],
     ['/finance', 'Finance'],
@@ -1519,6 +1610,7 @@ function renderPage(db, route) {
   if (route.parts[0] === 'projecten' && route.parts[1]) return renderProjectDetail(db, route.parts[1]);
   if (route.parts[0] === 'klanten' && route.parts[1]) return renderKlantDetail(db, route.parts[1]);
   switch (route.path) {
+    case '/acquisitie': return renderAcquisitie(db);
     case '/projecten': return renderProjectenList(db);
     case '/taken':     return renderTaken(db);
     case '/finance':   return renderFinance(db);
