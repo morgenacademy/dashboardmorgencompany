@@ -250,7 +250,7 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
       else if (projs.length > 1) { flags.push(`${clientRaw}: ${projs.length} projecten — facturen NIET auto-verwerkt (handmatig reconcileren)`); continue; }
       else {
         project_id = `prj_${slugify(clientRaw)}`;
-        if (!newProjects.find((p) => p.id === project_id)) newProjects.push({ id: project_id, customer_id, name: `${clientRaw}: dienst`, pipeline_status: 'afgerond' });
+        if (!newProjects.find((p) => p.id === project_id)) newProjects.push({ id: project_id, customer_id, name: `${clientRaw}: dienst`, pipeline_status: 'afgerond', owner: 'Karin' });
       }
 
       for (const f of files) {
@@ -266,6 +266,7 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
           date: inf.date || folderDate(sub) || folderDate(f),
           num: inf.num || key,
           desc: inf.desc,
+          owner: /harmen van heist/i.test(t) ? 'Harmen' : 'Karin', // factuur-afzender
           client: cust ? cust.name : clientRaw,
           sourceFile: `${statusDir}/${sub}/${f}`,
         });
@@ -443,13 +444,13 @@ async function main() {
     if (existIds.has(r.id)) { await sb(`projects?id=eq.${r.id}`, { method: 'PATCH', body: { pipeline_status: r.pipeline_status }, prefer: 'return=minimal' }); patched++; }
     else toInsert.push({ id: r.id, customer_id: r.customer_id, name: r.name, description: '', pipeline_status: r.pipeline_status, product_type: r.product_type, service_label: 'other', forecast_amount: r.forecast_amount || 0, actual_amount: 0, value_amount: r.forecast_amount || 0, pricing_model: 'project', priority: 'medium', owner: r.owner || 'Harmen', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: r.date || null, accepted_date: r.pipeline_status === 'geaccepteerd' ? (r.date || null) : null, next_action: '', next_action_date: null });
   }
-  for (const p of invNewProjects) toInsert.push({ id: p.id, customer_id: p.customer_id, name: p.name, description: '', pipeline_status: p.pipeline_status, product_type: 'other', service_label: 'other', forecast_amount: 0, actual_amount: 0, value_amount: 0, pricing_model: 'project', priority: 'medium', owner: 'Harmen', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: null, accepted_date: null, next_action: '', next_action_date: null });
+  for (const p of invNewProjects) toInsert.push({ id: p.id, customer_id: p.customer_id, name: p.name, description: '', pipeline_status: p.pipeline_status, product_type: 'other', service_label: 'other', forecast_amount: 0, actual_amount: 0, value_amount: 0, pricing_model: 'project', priority: 'medium', owner: p.owner || 'Karin', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: null, accepted_date: null, next_action: '', next_action_date: null });
   if (toInsert.length) await sb('projects', { method: 'POST', body: toInsert, prefer: 'resolution=merge-duplicates,return=minimal' });
 
   // Factuurregels schrijven — ADDITIEF EERST, vóór de destructieve seed-delete,
   // zodat een schrijf-fout nooit data wist zonder vervanging.
   const offerteFin = finPlan.map((r) => ({ id: `fin_acq_${r.id}`, date: r.date || '2026-01-01', type: 'income', description: `Offerte ${r.name}`, amount: r.forecast_amount || 0, category: '', vendor: r.customerObj?.name || '', project_id: r.id, recurring: 'one_off', source: 'invoice', owner: r.owner || 'Harmen', entity: 'Morgen', factuur_status: '', payment_status: r.payment }));
-  const invoiceFin = invoices.filter((i) => i.amount > 0).map((i) => ({ id: i.finId, date: i.date || '2026-01-01', type: 'income', description: `Factuur ${i.num}${i.desc ? ' — ' + i.desc : ''}`, amount: i.amount || 0, category: '', vendor: i.client, project_id: i.project_id, recurring: 'one_off', source: 'invoice', owner: 'Harmen', entity: 'Morgen', factuur_status: '', payment_status: i.payment }));
+  const invoiceFin = invoices.filter((i) => i.amount > 0).map((i) => ({ id: i.finId, date: i.date || '2026-01-01', type: 'income', description: `Factuur ${i.num}${i.desc ? ' — ' + i.desc : ''}`, amount: i.amount || 0, category: '', vendor: i.client, project_id: i.project_id, recurring: 'one_off', source: 'invoice', owner: i.owner || 'Karin', entity: 'Morgen', factuur_status: '', payment_status: i.payment }));
   const allFin = [...offerteFin, ...invoiceFin];
   if (allFin.length) await sb('finance_entries', { method: 'POST', body: allFin, prefer: 'resolution=merge-duplicates,return=minimal' });
 
