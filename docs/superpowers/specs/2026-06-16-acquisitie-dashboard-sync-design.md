@@ -96,10 +96,16 @@ verplaatst bestand geen data wist.
 
 ## Acquisitie-bord — `#/acquisitie`
 
-Nieuwe route in `app.js` met een render-functie die `projects` toont in 4 kolommen die
-de mappen spiegelen: **Pending (offerte verzonden) · Geaccepteerd · Afgewezen ·
-Gefactureerd/afgerond**. Per kaart: klant, titel, bedrag, datum. Bovenaan een totaal
-per kolom. Link toegevoegd aan de dashboard-navigatie.
+Nieuwe route in `app.js`, 5 kolommen: **Pending · Afgewezen · Geaccepteerd ·
+Gefactureerd · Betaald**. Per kaart: klant, titel, bedrag.
+
+- **Pending / Afgewezen / Geaccepteerd** zijn pipeline-gedreven (offerte-waarde):
+  offerte_verzonden → Pending; verloren → Afgewezen; gewonnen-maar-nog-niet-
+  gefactureerd → Geaccepteerd.
+- **Gefactureerd / Betaald** komen uit `finance_entries` (income, payment_status
+  `gefactureerd` resp. `ontvangen`), zodat de totalen **exact matchen met de
+  Finance-pagina**. Een project kan deels gefactureerd én deels betaald zijn → dan
+  staat het in beide kolommen met het betreffende bedrag.
 
 ## Backfill (eenmalig, nu)
 
