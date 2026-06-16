@@ -871,8 +871,8 @@ textarea { resize: vertical; min-height: 130px; }
 
 .acq-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 12px;
   align-items: start;
 }
 .acq-col { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
@@ -907,6 +907,7 @@ textarea { resize: vertical; min-height: 130px; }
 .acq-card__title { font-size: .82rem; color: var(--text-secondary); }
 .acq-card__meta { font-size: .72rem; color: var(--text-muted); }
 
+.acq-col--lead     { --col-accent: var(--text-muted); }
 .acq-col--pending  { --col-accent: var(--purple-light); }
 .acq-col--lost     { --col-accent: var(--tone-danger); }
 .acq-col--accepted { --col-accent: #8FB6FF; }

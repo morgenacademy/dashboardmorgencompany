@@ -295,17 +295,20 @@ function renderAcquisitie(db) {
   }
   const finOf = (id) => finByProject[id] || { gefactureerd: 0, ontvangen: 0, verwacht: 0 };
 
+  const LEAD_STAGES = ['verkennen', '1e_gesprek'];
   const PENDING_STAGES = ['offerte_verzonden'];
   const WON_STAGES = ['geaccepteerd', 'uitvoering', 'afgerond', 'on_hold'];
 
   // Verdeel projecten over de kolommen. Gefactureerd/Betaald komen uit finance,
   // zodat de totalen exact matchen met de Finance-pagina. Een project kan zowel
   // gefactureerd als (deels) betaald zijn → dan staat het in beide kolommen.
-  const buckets = { pending: [], lost: [], accepted: [], invoiced: [], paid: [] };
+  const buckets = { lead: [], pending: [], lost: [], accepted: [], invoiced: [], paid: [] };
   for (const p of db.projects) {
     const f = finOf(p.id);
     if (p.pipeline_status === 'verloren') {
       buckets.lost.push({ p, amount: valueOf(p) });
+    } else if (LEAD_STAGES.includes(p.pipeline_status)) {
+      buckets.lead.push({ p, amount: valueOf(p) });
     } else if (PENDING_STAGES.includes(p.pipeline_status)) {
       buckets.pending.push({ p, amount: valueOf(p) });
     } else if (WON_STAGES.includes(p.pipeline_status)) {
@@ -329,6 +332,7 @@ function renderAcquisitie(db) {
 
   // Volgorde: Pending · Afgewezen · Geaccepteerd · Gefactureerd · Betaald.
   const columns = [
+    { key: 'lead',     cls: 'lead',     title: 'Lead',         sub: 'Offerte te maken' },
     { key: 'pending',  cls: 'pending',  title: 'Pending',      sub: 'Offerte verzonden' },
     { key: 'lost',     cls: 'lost',     title: 'Afgewezen',    sub: 'Update verzonden' },
     { key: 'accepted', cls: 'accepted', title: 'Geaccepteerd', sub: 'Nog niet gefactureerd' },

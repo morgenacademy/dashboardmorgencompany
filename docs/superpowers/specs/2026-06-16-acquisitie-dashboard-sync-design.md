@@ -103,12 +103,12 @@ verplaatst bestand geen data wist.
 
 ## Acquisitie-bord — `#/acquisitie`
 
-Nieuwe route in `app.js`, 5 kolommen: **Pending · Afgewezen · Geaccepteerd ·
+Nieuwe route in `app.js`, 6 kolommen: **Lead · Pending · Afgewezen · Geaccepteerd ·
 Gefactureerd · Betaald**. Per kaart: klant, titel, bedrag.
 
-- **Pending / Afgewezen / Geaccepteerd** zijn pipeline-gedreven (offerte-waarde):
-  offerte_verzonden → Pending; verloren → Afgewezen; gewonnen-maar-nog-niet-
-  gefactureerd → Geaccepteerd.
+- **Lead / Pending / Afgewezen / Geaccepteerd** zijn pipeline-gedreven (offerte-waarde):
+  verkennen/1e_gesprek → Lead (offerte te maken); offerte_verzonden → Pending;
+  verloren → Afgewezen; gewonnen-maar-nog-niet-gefactureerd → Geaccepteerd.
 - **Gefactureerd / Betaald** komen uit `finance_entries` (income, payment_status
   `gefactureerd` resp. `ontvangen`), zodat de totalen **exact matchen met de
   Finance-pagina**. Een project kan deels gefactureerd én deels betaald zijn → dan
