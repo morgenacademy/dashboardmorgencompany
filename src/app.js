@@ -330,6 +330,7 @@ function acquisitieBuckets(db) {
 }
 
 function renderAcquisitie(db) {
+  const fyear = new Date().toISOString().slice(0, 4);
   const { buckets, customersById } = acquisitieBuckets(db);
 
   const card = ({ p, amount }) => {
@@ -1217,33 +1218,33 @@ function renderFinanceBreakdown(entries, q) {
     return owner.includes(personFilter);
   });
 
-  // Groepeer per vendor + maand
-  const yearForChart = q.year || new Date().getFullYear().toString();
-  const ys = `${yearForChart}-01-01`;
-  const ye = `${yearForChart}-12-31`;
+  // Groepeer per vendor + maand-van-jaar (jaar-scope is al door renderFinance
+  // toegepast op `entries`, dus dit werkt zowel voor één jaar als voor Totaal).
   const monthsLbl = [];
   for (let mi = 0; mi < 12; mi++) {
-    const d = new Date(Number(yearForChart), mi, 1);
-    monthsLbl.push({ m: d.toISOString().slice(0, 7), label: d.toLocaleDateString('nl-NL', { month: 'short' }) });
+    const d = new Date(2000, mi, 1);
+    monthsLbl.push({ m: String(mi + 1).padStart(2, '0'), label: d.toLocaleDateString('nl-NL', { month: 'short' }) });
   }
 
   const rowsByVendor = {};
   for (const f of filtered) {
-    if (!f.date || f.date < ys || f.date > ye) continue;
+    if (!f.date) continue;
+    const mi = Number(f.date.slice(5, 7)) - 1;
+    if (mi < 0 || mi > 11) continue;
     const vendor = f.vendor || f.description || '—';
     if (!rowsByVendor[vendor]) rowsByVendor[vendor] = { vendor, category: f.category || '', recurring: f.recurring, total: 0, byMonth: {} };
     const row = rowsByVendor[vendor];
     const amount = Number(f.amount || 0);
     if (f.recurring === 'monthly') {
-      const fromIdx = Math.max(0, monthsLbl.findIndex((mm) => mm.m >= f.date.slice(0, 7)));
-      for (let i = fromIdx; i < monthsLbl.length; i++) {
-        row.byMonth[monthsLbl[i].m] = (row.byMonth[monthsLbl[i].m] || 0) + amount;
+      for (let i = mi; i < 12; i++) {
+        const key = monthsLbl[i].m;
+        row.byMonth[key] = (row.byMonth[key] || 0) + amount;
         row.total += amount;
       }
       if (f.category && !row.category) row.category = f.category;
     } else {
-      const m = f.date.slice(0, 7);
-      row.byMonth[m] = (row.byMonth[m] || 0) + amount;
+      const key = monthsLbl[mi].m;
+      row.byMonth[key] = (row.byMonth[key] || 0) + amount;
       row.total += amount;
     }
   }
@@ -1313,11 +1314,14 @@ function renderFinance(db) {
   const q = route.query || {};
   const filterType    = q.type || '';
   const filterPayment = q.payment || '';
-  const filterYear    = q.year || '';
+  const curYear = new Date().getFullYear().toString();
+  const yearSel = q.year || curYear;            // '2025' | '2026' | 'all' (default: huidig jaar)
+  const allYears = yearSel === 'all';
+  const filterYear = allYears ? '' : yearSel;
 
   let entries = db.finance;
   if (filterType) entries = entries.filter((f) => f.type === filterType);
-  if (filterYear) entries = entries.filter((f) => (f.date || '').slice(0, 4) === filterYear);
+  if (!allYears) entries = entries.filter((f) => (f.date || '').slice(0, 4) === yearSel);
   if (filterPayment === 'gefactureerd_ontvangen') {
     entries = entries.filter((f) => ['gefactureerd','ontvangen'].includes(f.payment_status));
   } else if (filterPayment) {
@@ -1389,7 +1393,7 @@ function renderFinance(db) {
   if (filterType === 'expense') activeFilters.push('Type: Expense');
   if (filterPayment === 'gefactureerd_ontvangen') activeFilters.push('Status: gefactureerd + ontvangen');
   else if (filterPayment) activeFilters.push(`Status: ${filterPayment}`);
-  if (filterYear) activeFilters.push(`Jaar: ${filterYear}`);
+  // Jaar zit niet in activeFilters (heeft eigen knoppen); breakdown blijft gated op type/status.
 
   const linkTile = (label, value, meta, tone, href) =>
     `<a class="metric-card metric-${tone} metric-card--link" href="${href}">
@@ -1398,22 +1402,27 @@ function renderFinance(db) {
        <span class="metric-meta">${escapeHtml(meta)}</span>
      </a>`;
 
+  const yearsPresent = [...new Set(db.finance.map((f) => (f.date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const yearHref = (y) => { const p = new URLSearchParams(q); p.set('year', y); return `#/finance?${p.toString()}`; };
+  const yearFilter = `<div class="person-toggle">${[...yearsPresent, 'all'].map((y) => `<a href="${yearHref(y)}" class="${yearSel === y ? 'active' : ''}">${y === 'all' ? 'Totaal' : y}</a>`).join('')}</div>`;
+
   return `
     <section class="page-section">
       <div class="section-header">
         <div>
           <h1>Finance</h1>
           <p>Income + expenses, gekoppeld aan projecten waar mogelijk.</p>
-          ${activeFilters.length ? `<p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${activeFilters.map((f) => `<span class="badge badge-info">${escapeHtml(f)}</span>`).join('')} <a href="#/finance" class="muted" style="font-size:.82rem;">Filters wissen</a></p>` : ''}
+          ${activeFilters.length ? `<p style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">${activeFilters.map((f) => `<span class="badge badge-info">${escapeHtml(f)}</span>`).join('')} <a href="#/finance?year=${yearSel}" class="muted" style="font-size:.82rem;">Filters wissen</a></p>` : ''}
         </div>
+        ${yearFilter}
       </div>
 
       <div class="metric-grid">
-        ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', '#/finance?type=income&payment=ontvangen')}
-        ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', '#/finance?type=income&payment=gefactureerd')}
-        ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', '#/finance?type=income&payment=verwacht')}
-        ${linkTile('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`,    'warning', '#/finance?type=expense')}
-        ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', '#/finance')}
+        ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', `#/finance?type=income&payment=ontvangen&year=${yearSel}`)}
+        ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', `#/finance?type=income&payment=gefactureerd&year=${yearSel}`)}
+        ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', `#/finance?type=income&payment=verwacht&year=${yearSel}`)}
+        ${linkTile('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`,    'warning', `#/finance?type=expense&year=${yearSel}`)}
+        ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', `#/finance?year=${yearSel}`)}
       </div>
 
       ${activeFilters.length ? renderFinanceBreakdown(entries, q) : ''}
