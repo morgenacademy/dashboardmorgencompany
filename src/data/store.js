@@ -1,4 +1,7 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+// Lokaal gevendord (lib/vendor/) i.p.v. runtime-import van esm.sh.
+// Reden: esm.sh-CDN-hapering of UA-afhankelijke build (Safari) liet de hele
+// module crashen -> dashboard/cockpit laadden geen data. Nu geen externe CDN meer.
+import { createClient } from '../../lib/vendor/supabase-js.js';
 
 const SUPABASE_URL = 'https://jeqvjtnxgxpjviwhjmzr.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uO70RUh9JTZZEykA_mUyzw_hyMNfi7-';
