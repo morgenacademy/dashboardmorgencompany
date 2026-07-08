@@ -6,12 +6,17 @@
 // Gebruik:
 //   node scripts/sync-acquisitie.mjs --dry   # toon wat er zou gebeuren, schrijf niets
 //   node scripts/sync-acquisitie.mjs         # schrijf naar Supabase
+//   node scripts/sync-acquisitie.mjs --force # schrijf ook als er onleesbare PDF's zijn
 //
 // Vereist: `pdftotext` (brew install poppler) voor bedrag-extractie.
+//
+// Let op: Google Drive File Stream houdt bestanden soms als placeholder (metadata
+// aanwezig, inhoud niet lokaal). Zulke PDF's worden overgeslagen, nooit geraden, en
+// een live-run breekt af tenzij --force. Zie pdfText().
 
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, basename, extname, dirname } from 'node:path';
+import { join, basename, extname, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -21,6 +26,7 @@ const ACQ_DIR = process.env.ACQ_DIR || '/Users/harmen/Library/CloudStorage/Googl
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://jeqvjtnxgxpjviwhjmzr.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_uO70RUh9JTZZEykA_mUyzw_hyMNfi7-';
 const DRY = process.argv.includes('--dry');
+const FORCE = process.argv.includes('--force');
 
 // Statusmap-prefix → pipeline_status.
 const STATUS_BY_PREFIX = [
@@ -79,13 +85,34 @@ function paymentForFolder(name) {
   return null;
 }
 
+// pdftotext klaagt op stderr maar geeft exit 0 als een bestand geen echte PDF is
+// (Drive-placeholder: metadata aanwezig, inhoud niet lokaal). Lege output zou dan
+// stilletjes als "offerte zonder bedrag" doorgaan → verzonnen projecten.
+const PDF_BROKEN_RE = /may not be a pdf file|couldn't find trailer dictionary|couldn't read xref/i;
+
+// Onleesbare bestanden, verzameld tijdens de run. Eén regel per bestand.
+const UNREADABLE = [];
+
 const _pdfCache = new Map();
+// Geeft de PDF-tekst terug, of null als het bestand onleesbaar is. null !== ''.
+// Bellers MOETEN op null controleren en het bestand dan volledig overslaan.
 function pdfText(file) {
   if (_pdfCache.has(file)) return _pdfCache.get(file);
-  let out = '';
-  try { out = execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }); } catch {}
-  _pdfCache.set(file, out);
-  return out;
+  // Timeout: een lokale PDF parseert in milliseconden. Blijft pdftotext hangen, dan
+  // wacht het op een Drive-download die er niet komt → als onleesbaar behandelen.
+  const res = spawnSync('pdftotext', ['-layout', file, '-'], {
+    encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 8_000,
+  });
+  let text = null, reason = '';
+  if (res.error) reason = res.error.code === 'ETIMEDOUT' ? 'timeout bij lezen (Drive niet lokaal?)' : res.error.message;
+  else if (res.status !== 0) reason = `pdftotext exit ${res.status}`;
+  else if (PDF_BROKEN_RE.test(res.stderr || '')) reason = 'geen geldige PDF-inhoud (Drive niet lokaal?)';
+  else if (!/[A-Za-z0-9]/.test(res.stdout || '')) reason = 'geen tekst in PDF';
+  else text = res.stdout;
+
+  if (text === null) UNREADABLE.push({ file, reason });
+  _pdfCache.set(file, text);
+  return text;
 }
 
 // Parse Nederlands bedrag "€ 2.000,00" / "€ 10.500" → number.
@@ -185,14 +212,20 @@ function pdfIsOfferte(text) { return /\bofferte\b|\bvoorstel\b/i.test(text); }
 
 // Type van een submap: 'offerte' (offerte-PDF, oude conventie) of 'invoice'
 // (klant-map met facturen). Offerte heeft voorrang (bv. SoloSolis Vertaling).
+// Geeft 'unreadable' als de map wél PDF's heeft maar geen enkele leesbaar is; dan
+// mag er niets uit afgeleid worden (anders wordt een factuur een spookofferte).
 function classifyFolder(subPath, files) {
-  let hasInv = false, hasOff = false;
+  let hasInv = false, hasOff = false, readable = 0, pdfs = 0;
   for (const f of files) {
     if (extname(f).toLowerCase() !== '.pdf') continue;
+    pdfs++;
     const t = pdfText(join(subPath, f));
+    if (t === null) continue; // onleesbaar → negeren, niet raden
+    readable++;
     if (pdfIsOfferte(t)) hasOff = true;
     if (pdfIsInvoice(t)) hasInv = true;
   }
+  if (pdfs && !readable) return 'unreadable';
   if (hasOff) return 'offerte';
   if (hasInv) return 'invoice';
   return 'offerte';
@@ -223,6 +256,9 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
 
   const invoices = [], flags = [], newCustomers = [], newProjects = [];
   const seenCust = new Set(existingCustomers.map((c) => c.id));
+  // Klanten waarvan minstens één factuur onleesbaar was: hun factuurtotaal is
+  // per definitie incompleet, dus hun seed-regels mogen NOOIT vervangen worden.
+  const custWithUnreadable = new Set();
 
   for (const statusDir of listDirs(ACQ_DIR)) {
     if (!statusDir.startsWith('4.') && !statusDir.startsWith('5.')) continue;
@@ -256,6 +292,7 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
       for (const f of files) {
         if (extname(f).toLowerCase() !== '.pdf') continue;
         const t = pdfText(join(subPath, f));
+        if (t === null) { custWithUnreadable.add(customer_id); continue; } // nooit een bedrag raden
         if (!pdfIsInvoice(t)) continue;
         const inf = parseInvoice(t);
         const key = inf.num || slugify(basename(f, extname(f)));
@@ -274,7 +311,7 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
       }
     }
   }
-  return { invoices, flags, newCustomers, newProjects };
+  return { invoices, flags, newCustomers, newProjects, custWithUnreadable };
 }
 
 function buildRecords() {
@@ -292,9 +329,13 @@ function buildRecords() {
       if (SKIP_FOLDERS.some((s) => sub.includes(s))) { flags.push(`skip (al in dashboard): ${sub}`); continue; }
       const subPath = join(statusPath, sub);
       const files = listFiles(subPath);
+      const kind = classifyFolder(subPath, files);
+      // Geen enkele leesbare PDF → niets afleiden, geen project aanmaken.
+      if (kind === 'unreadable') { flags.push(`onleesbare PDF('s), map overgeslagen: ${statusDir}/${sub}`); continue; }
       // Factuur-mappen (klant-map met facturen) in 4./5. → buildInvoiceRecords.
-      if ((statusDir.startsWith('4.') || statusDir.startsWith('5.')) && classifyFolder(subPath, files) === 'invoice') continue;
-      const offertes = chooseOffertePdfs(files);
+      if ((statusDir.startsWith('4.') || statusDir.startsWith('5.')) && kind === 'invoice') continue;
+      // Onleesbare PDF's nooit als offerte gebruiken.
+      const offertes = chooseOffertePdfs(files).filter((f) => pdfText(join(subPath, f)) !== null);
       if (!offertes.length) { flags.push(`geen offerte-PDF in: ${statusDir}/${sub}`); continue; }
       if (offertes.length > 1) flags.push(`${offertes.length} offertes in: ${statusDir}/${sub} (per PDF gesplitst)`);
 
@@ -361,22 +402,37 @@ async function main() {
 
   const { records, flags } = buildRecords();
 
+  // Fail fast: buildRecords() heeft elke PDF al aangeraakt, dus onleesbare bestanden
+  // zijn nu bekend. Bij een live-run stoppen we vóór we Supabase ook maar aanraken.
+  if (!DRY && UNREADABLE.length && !FORCE) {
+    console.error(`\n✖ Live-run afgebroken: ${UNREADABLE.length} bestand(en) onleesbaar, de bron is incompleet.`);
+    for (const u of UNREADABLE) console.error(`   - ${relative(ACQ_DIR, u.file)} — ${u.reason}`);
+    console.error(`\n  Maak ze lokaal beschikbaar (Google Drive → rechtsklik map → "Download now") en draai opnieuw.`);
+    console.error(`  Of forceer bewust: node scripts/sync-acquisitie.mjs --force\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   // Bestaande data ophalen (nodig voor factuur-matching + seed-reconciliatie).
   const existingCustomers = await sb('customers?select=id,name,type');
   const existingProjects = await sb('projects?select=id,customer_id,name');
   const existingFinance = await sb('finance_entries?select=id,project_id,payment_status,amount,type');
 
-  const { invoices, flags: invFlags, newCustomers: invNewCustomers, newProjects: invNewProjects } = buildInvoiceRecords(existingCustomers, existingProjects);
+  const { invoices, flags: invFlags, newCustomers: invNewCustomers, newProjects: invNewProjects, custWithUnreadable } = buildInvoiceRecords(existingCustomers, existingProjects);
 
   // Seed finance-regels die vervangen worden door Karin's facturen: income met
   // status gefactureerd/ontvangen, op een project van een klant die nu facturen
   // heeft, en niet zelf door de sync beheerd (fin_acq_*). Forecast (verwacht) blijft.
   const projToCust = Object.fromEntries(existingProjects.map((p) => [p.id, p.customer_id]));
-  // Alleen klanten met een succesvol geparseerd factuurtotaal > 0, zodat een
-  // klant met een onleesbare factuur niet z'n bestaande seed-regel verliest.
+  // Alleen klanten met een succesvol geparseerd factuurtotaal > 0 én zonder ook maar
+  // één onleesbare factuur. Anders zou bv. Unbeatable PT (1 leesbare factuur €270 +
+  // 1 onleesbare €516,46) als "gedekt" gelden en z'n seed-regel van €786 verliezen.
   const invTotalByCust = {};
   for (const i of invoices) invTotalByCust[i.customer_id] = (invTotalByCust[i.customer_id] || 0) + i.amount;
-  const coveredCustomers = new Set(Object.entries(invTotalByCust).filter(([, t]) => t > 0).map(([c]) => c));
+  const coveredCustomers = new Set(
+    Object.entries(invTotalByCust).filter(([c, t]) => t > 0 && !custWithUnreadable.has(c)).map(([c]) => c),
+  );
+  const skippedCovered = [...custWithUnreadable].filter((c) => (invTotalByCust[c] || 0) > 0);
   const seedDelete = existingFinance.filter((f) =>
     f.type === 'income' &&
     ['gefactureerd', 'ontvangen'].includes(f.payment_status) &&
@@ -417,17 +473,34 @@ async function main() {
     for (const f of seedDelete) console.log(`   - ${String(f.id).padEnd(26)} ${f.payment_status.padEnd(12)} €${Number(f.amount).toLocaleString('nl-NL')}  [${projToCust[f.project_id]}]`);
   }
 
-  const allFlags = [...flags, ...invFlags];
+  const unreadableFlags = UNREADABLE.map((u) => `onleesbaar (${u.reason}): ${relative(ACQ_DIR, u.file)}`);
+  const coveredFlags = skippedCovered.map(
+    (c) => `${custName[c] || c}: factuur(en) onleesbaar → seed-regels blijven staan (totaal onbetrouwbaar)`,
+  );
+  const allFlags = [...flags, ...invFlags, ...unreadableFlags, ...coveredFlags];
   if (allFlags.length) { console.log(`\n⚑ Aandacht:`); for (const f of allFlags) console.log(`   - ${f}`); }
 
   const finPlan = records.filter((r) => r.payment && !r.aliased); // offerte-folders in 4./5.
 
   if (DRY) {
-    console.log(`\nDRY: ${records.length} offertes · ${invoices.length} facturen · ${invNewCustomers.length} nieuwe klant(en) · ${seedDelete.length} seed-regel(s) te vervangen. Niets geschreven.\n`);
+    const skipped = UNREADABLE.length ? ` · ${UNREADABLE.length} onleesbaar overgeslagen` : '';
+    console.log(`\nDRY: ${records.length} offertes · ${invoices.length} facturen · ${invNewCustomers.length} nieuwe klant(en) · ${seedDelete.length} seed-regel(s) te vervangen${skipped}. Niets geschreven.\n`);
+    if (UNREADABLE.length) console.log(`⚠ Bron is incompleet — een live-run breekt af tenzij je --force geeft.\n`);
     return;
   }
 
   // ===== LIVE =====
+  // Onleesbare bestanden = incomplete bron. Niet stilzwijgend doorschrijven.
+  if (UNREADABLE.length && !FORCE) {
+    console.error(`\n✖ Live-run afgebroken: ${UNREADABLE.length} bestand(en) onleesbaar (zie ⚑ hierboven).`);
+    console.error(`  Maak ze lokaal beschikbaar (Google Drive → rechtsklik map → "Download now") en draai opnieuw.`);
+    console.error(`  Weet je zeker dat het veilig is? Dan: node scripts/sync-acquisitie.mjs --force\n`);
+    process.exitCode = 1;
+    return;
+  }
+  if (UNREADABLE.length && FORCE) {
+    console.warn(`\n⚠ --force: ${UNREADABLE.length} onleesbaar bestand(en) genegeerd. Totalen kunnen incompleet zijn.\n`);
+  }
   const haveCust = new Set(existingCustomers.map((c) => c.id));
   const newCustomers = [], seen = new Set();
   const addCust = (c, note) => { if (c && !haveCust.has(c.id) && !seen.has(c.id)) { seen.add(c.id); newCustomers.push({ id: c.id, name: c.name, type: c.type || 'klant', industry: c.industry || '', status: 'active', notes: note }); } };
