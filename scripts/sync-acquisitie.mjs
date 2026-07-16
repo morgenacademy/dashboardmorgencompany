@@ -55,6 +55,10 @@ const KNOWN_CLIENTS = [
   { id: 'cus_america_tower', name: 'PharmaPartners',    type: 'klant',    industry: 'Zorg / software',     match: [/pharma\s*partners/i] },
   { id: 'cus_onview',        name: 'Onview',            type: 'klant',    industry: '',                    match: [/onview/i] },
   { id: 'cus_pinkroccade',   name: 'PinkRoccade',       type: 'klant',    industry: 'Zorg / software',     match: [/pink\s*roccade/i] },
+  // Heet in het dashboard "VML"; in mappen/notities voluit. Zonder deze match zou
+  // "VLM Moderator" als losse nieuwe klant worden aangemaakt naast cus_vml.
+  // "VLM" en "VML" worden door elkaar gebruikt (map vs. dashboard); match beide.
+  { id: 'cus_vml',           name: 'VML',               type: 'prospect', industry: 'Vereniging / logistiek', match: [/vereniging\s+logistiek\s+management/i, /\bvlm\b/i, /\bvml\b/i] },
 ];
 
 // Mappen die volledig overgeslagen worden (zelden nodig — alias heeft voorkeur).
@@ -237,6 +241,18 @@ function deriveTitle(fileBase, clientName) {
   return t || 'Offerte';
 }
 
+// Notitie-offertes (.txt) hebben soms expliciete velden:
+//   Klant: ... / Omschrijving: ... / Bedrag: EUR 995,00
+// Die zijn betrouwbaarder dan map- of bestandsnaam, dus ze winnen.
+function parseNote(text) {
+  if (!text) return {};
+  const field = (label) => {
+    const m = text.match(new RegExp(`^[ \\t]*${label}[ \\t]*:[ \\t]*(.+)$`, 'im'));
+    return m ? m[1].trim() : null;
+  };
+  return { client: field('Klant'), title: field('Omschrijving') };
+}
+
 function guessProductType(s) {
   if (/keynote|training|programma|sessie|workshop|cursus|lab/i.test(s)) return 'training';
   if (/automat|flow|order|voorraad|klantenservice|check|foto|vertaal/i.test(s)) return 'automatisering';
@@ -277,6 +293,9 @@ const INVOICE_FOLDER_PROJECT = {
   'michielpro invoice claudecode onview': 'prj_onview_claude',
   'michielpro invoice claudecode pharmapartners': 'prj_america_claude_code',
   'michielpro invoice n8n training pink roccade': 'prj_pinkroccade_trainingen',
+  // VML krijgt een 2e project zodra de Moderator-offerte binnenkomt; zonder pin
+  // haakt de klant→project-heuristiek af en stoppen deze facturen met syncen.
+  'vereniging logistiek management': 'prj_vml',
 };
 
 function normName(s) {
@@ -434,21 +453,23 @@ function buildRecords() {
 
       for (const file of offertes) {
         const fileBase = basename(file, extname(file));
-        const hay = `${sub} ${fileBase}`;
+        const fullPath = join(subPath, file);
+        const text = fileText(fullPath);
+        const note = extname(file).toLowerCase() === '.txt' ? parseNote(text) : {};
+        const hay = `${sub} ${fileBase} ${note.client || ''}`;
         const client = detectClient(hay);
         // Fallback op de MAPnaam, niet de bestandsnaam: de conventie is
         // `JJMMDD Klant — Titel`, dus daar staat de klant. Een bestand als
         // "260616 Offerte GB Steel and Wood.pdf" zou anders "Offerte GB Steel
         // and Wood" als klantnaam opleveren.
         const folderClient = sub.replace(/^\d{6,7}\s*-?\s*/, '').split(/\s*[-–—:]\s*/)[0].trim();
-        const clientName = client ? client.name : (folderClient || 'Onbekend');
+        const clientName = client ? client.name : (note.client || folderClient || 'Onbekend');
         const customer_id = client ? client.id : `cus_${slugify(clientName)}`;
         const date = folderDate(sub) || folderDate(fileBase);
-        const title = deriveTitle(fileBase, clientName);
+        const title = note.title || deriveTitle(fileBase, clientName);
         const idToken = (fileBase.match(/^(\d{6,7})/) || [])[1] || slugify(`${date || ''}_${title}`);
 
-        const fullPath = join(subPath, file);
-        const amount = extractAmount(fileText(fullPath));
+        const amount = extractAmount(text);
         if (amount == null) flags.push(`geen bedrag uit de offerte: ${statusDir}/${sub}/${file}`);
 
         cands.push({ statusDir, sub, file, client, clientName, customer_id, date, title, idToken, hay, amount, pipeline_status, payment });
