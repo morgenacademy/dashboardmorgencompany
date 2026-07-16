@@ -53,13 +53,17 @@ const KNOWN_CLIENTS = [
   { id: 'cus_gem_tilburg',   name: 'Gemeente Tilburg',  type: 'prospect', industry: 'Overheid',            match: [/tilburg/i] },
   { id: 'cus_solosolis',     name: 'Solo Solis',        type: 'klant',    industry: 'E-commerce / retail', match: [/solo\s*solis/i] },
   // Eindklanten van het MichielPro-kanaal: staan in de mapnaam, niet in de afzender.
-  { id: 'cus_america_tower', name: 'PharmaPartners',    type: 'klant',    industry: 'Zorg / software',     match: [/pharma\s*partners/i] },
+  { id: 'cus_america_tower', name: 'PharmaPartners',    type: 'klant',    industry: 'IT / Public sector software', match: [/pharma\s*partners/i] },
   { id: 'cus_onview',        name: 'Onview',            type: 'klant',    industry: '',                    match: [/onview/i] },
-  { id: 'cus_pinkroccade',   name: 'PinkRoccade',       type: 'klant',    industry: 'Zorg / software',     match: [/pink\s*roccade/i] },
+  { id: 'cus_pinkroccade',   name: 'PinkRoccade',       type: 'klant',    industry: 'IT / Public sector software', match: [/pink\s*roccade/i] },
+  // Heet in de map kortweg "Vermeulen"; zonder match wordt dat een tweede klant
+  // naast de bestaande trappenfabriek. Zie ook ID_ALIAS: de langere naam verandert
+  // het gegenereerde project-id, dus dat moet mee terug naar het bestaande id.
+  { id: 'cus_trappenfabriek', name: 'Trappenfabriek Vermeulen B.V.', type: 'klant', industry: 'Industrie', match: [/vermeulen/i] },
   // Heet in het dashboard "VML"; in mappen/notities voluit. Zonder deze match zou
   // "VLM Moderator" als losse nieuwe klant worden aangemaakt naast cus_vml.
   // "VLM" en "VML" worden door elkaar gebruikt (map vs. dashboard); match beide.
-  { id: 'cus_vml',           name: 'VML',               type: 'prospect', industry: 'Vereniging / logistiek', match: [/vereniging\s+logistiek\s+management/i, /\bvlm\b/i, /\bvml\b/i] },
+  { id: 'cus_vml',           name: 'VML',               type: 'prospect', industry: 'Logistiek / Transport', match: [/vereniging\s+logistiek\s+management/i, /\bvlm\b/i, /\bvml\b/i] },
 ];
 
 // Mappen die volledig overgeslagen worden (zelden nodig — alias heeft voorkeur).
@@ -78,6 +82,10 @@ const ID_ALIAS = {
   prj_acq_260406: 'prj_solosolis_vert',     // Vertaalflow — bestaand, €6.000 + historie
   prj_acq_2607002: 'prj_solosolis_stock',   // Binnenkomende voorraad = bestaand 'pending stock in admin panel'
   prj_acq_260616: 'prj_gb_steel',           // GB Steel-offerte stond al handmatig in het dashboard
+  // De KNOWN_CLIENTS-match maakt van "Vermeulen" de volledige klantnaam, en die
+  // zit via slugify(clientName) in het id. Zonder deze alias komt de sync met een
+  // tweede rij naast het project dat op 16-07 al is aangemaakt.
+  prj_acq_260716_trappenfabriek_vermeulen_b_v: 'prj_acq_260716_vermeulen',
 };
 
 // Per-offerte correcties (bedrag/naam/klant). Gevuld voor de backfill.
