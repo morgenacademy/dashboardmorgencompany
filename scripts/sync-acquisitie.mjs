@@ -651,9 +651,18 @@ async function main() {
     return !existingFinance.some((f) => f.type === 'income' && f.project_id === r.id && f.id !== own);
   });
 
+  // Nieuwe klanten vóór de DRY-afslag bepalen: een dry-run moet ook de klanten
+  // tonen die uit offertes komen, niet alleen die uit facturen.
+  const haveCust = new Set(existingCustomers.map((c) => c.id));
+  const newCustomers = [], seen = new Set();
+  const addCust = (c, note) => { if (c && !haveCust.has(c.id) && !seen.has(c.id)) { seen.add(c.id); newCustomers.push({ id: c.id, name: c.name, type: c.type || 'klant', industry: c.industry || '', status: 'active', notes: note }); } };
+  for (const r of records) addCust(r.customerObj, 'Aangemaakt door acquisitie-sync.');
+  for (const c of invNewCustomers) addCust(c, 'Aangemaakt door acquisitie-sync (factuur).');
+
   if (DRY) {
+    if (newCustomers.length) console.log(`\n── Nieuwe klanten: ${newCustomers.map((c) => c.name).join(', ')}`);
     const skipped = UNREADABLE.length ? ` · ${UNREADABLE.length} onleesbaar overgeslagen` : '';
-    console.log(`\nDRY: ${records.length} offertes · ${invoices.length} facturen · ${invNewCustomers.length} nieuwe klant(en) · ${seedDelete.length} seed-regel(s) te vervangen${skipped}. Niets geschreven.\n`);
+    console.log(`\nDRY: ${records.length} offertes · ${invoices.length} facturen · ${newCustomers.length} nieuwe klant(en) · ${seedDelete.length} seed-regel(s) te vervangen${skipped}. Niets geschreven.\n`);
     if (UNREADABLE.length) console.log(`⚠ Bron is incompleet — een live-run breekt af tenzij je --force geeft.\n`);
     return;
   }
@@ -670,11 +679,6 @@ async function main() {
   if (UNREADABLE.length && FORCE) {
     console.warn(`\n⚠ --force: ${UNREADABLE.length} onleesbaar bestand(en) genegeerd. Totalen kunnen incompleet zijn.\n`);
   }
-  const haveCust = new Set(existingCustomers.map((c) => c.id));
-  const newCustomers = [], seen = new Set();
-  const addCust = (c, note) => { if (c && !haveCust.has(c.id) && !seen.has(c.id)) { seen.add(c.id); newCustomers.push({ id: c.id, name: c.name, type: c.type || 'klant', industry: c.industry || '', status: 'active', notes: note }); } };
-  for (const r of records) addCust(r.customerObj, 'Aangemaakt door acquisitie-sync.');
-  for (const c of invNewCustomers) addCust(c, 'Aangemaakt door acquisitie-sync (factuur).');
   if (newCustomers.length) { await sb('customers', { method: 'POST', body: newCustomers, prefer: 'resolution=merge-duplicates,return=minimal' }); console.log(`\n➕ ${newCustomers.length} klant(en): ${newCustomers.map((c) => c.name).join(', ')}`); }
 
   // Offerte-projecten: bestaand → status patchen; nieuw → insert. + nieuwe factuur-projecten.
