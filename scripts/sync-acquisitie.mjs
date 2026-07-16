@@ -54,7 +54,7 @@ const KNOWN_CLIENTS = [
   { id: 'cus_solosolis',     name: 'Solo Solis',        type: 'klant',    industry: 'E-commerce / retail', match: [/solo\s*solis/i] },
   // Eindklanten van het MichielPro-kanaal: staan in de mapnaam, niet in de afzender.
   { id: 'cus_america_tower', name: 'PharmaPartners',    type: 'klant',    industry: 'IT / Public sector software', match: [/pharma\s*partners/i] },
-  { id: 'cus_onview',        name: 'Onview',            type: 'klant',    industry: '',                    match: [/onview/i] },
+  { id: 'cus_onview',        name: 'Onview',            type: 'klant',    industry: 'IT / Software',       match: [/onview/i] },
   { id: 'cus_pinkroccade',   name: 'PinkRoccade',       type: 'klant',    industry: 'IT / Public sector software', match: [/pink\s*roccade/i] },
   // Heet in de map kortweg "Vermeulen"; zonder match wordt dat een tweede klant
   // naast de bestaande trappenfabriek. Zie ook ID_ALIAS: de langere naam verandert
