@@ -6,5 +6,9 @@
   "prj_acq_250725": {
     "forecast_amount": 2200,
     "name": "Solo Solis: Automatiserings-offerte 2025"
+  },
+  "prj_acq_2026_07_10_offerte": {
+    "forecast_amount": 32000,
+    "name": "PharmaPartners: Begeleiding naar Agentic Teams"
   }
 }

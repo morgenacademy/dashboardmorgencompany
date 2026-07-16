@@ -23,7 +23,8 @@ Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test
 
 - **Werk op branch `cockpit`. Merge NIET naar `main`.** Elke merge naar main triggert een betaalde Netlify-deploy. De gebruiker merget zelf wanneer die er klaar voor is. Commit + push naar cockpit is prima.
 - **Data zit in Supabase, niet in de repo.** Handmatige datacorrecties gaan via de Supabase MCP (`execute_sql`, project ref `jeqvjtnxgxpjviwhjmzr`), niet via codewijzigingen. RLS staat anon lezen/schrijven toe.
-- **De Drive-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (offerte → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen.
+- **De Drive-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (offerte → geaccepteerd → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen.
+- **Draai de sync altijd eerst met `--dry` en lees de uitvoer** voor je live gaat. Hij raakt echt geld: hij schrijft finance-regels en kan seed-regels vervangen. Bij twijfel over een bedrag: pinnen in de overrides, niet gokken.
 
 ## Architectuur
 
@@ -54,10 +55,33 @@ Ruwe `projects.pipeline_status` ≠ de buckets die de UI toont. `acquisitieBucke
 
 Wijzig je één van deze plekken, wijzig ze allemaal via de gedeelde helpers — anders lopen bord, tegels en Finance uiteen.
 
+**Geld hoort in `finance_entries`, niet alleen in `projects.forecast_amount`.** Een bedrag dat alleen als forecast op een project staat, telt nergens in Finance mee (Verwacht/Omzet lezen puur uit finance). Daarom schrijft de sync voor `2. Geaccepteerd` een `verwacht`-regel: toegezegd werk = geld dat eraan komt. Zet je zoiets handmatig neer, doe dat dan ook als finance-regel.
+
 ### Serverless (`lib/`, `netlify/`)
 `lib/integrations.mjs` (AI-nieuws, Netlify-sites, Supabase-projects) wordt gedeeld door `server.js` (lokaal) én `netlify/functions/*.mjs` (productie), zodat `/api/*` in beide werkt.
 
 ## Acquisitie-sync (`scripts/sync-acquisitie.mjs`)
-Leest de Drive-map `Morgen Academy/Acquisitie` (statusmappen `1. Pending` … `5. Betaald`) en upsert naar Supabase. Idempotent via deterministische id's (`prj_acq_<nummer>`, of alias naar een bestaand project via `ID_ALIAS`). Offerte-PDF's → projecten; Karin's factuurmappen in `4.`/`5.` → `finance_entries`. Ontwerp: `docs/superpowers/specs/2026-06-16-acquisitie-dashboard-sync-design.md`.
+Leest de Drive-map `Morgen Academy/Acquisitie` (statusmappen `1. Pending` … `5. Betaald`, plus `Archive` = overslaan) en upsert naar Supabase. Offertes mogen **`.pdf`, `.html` of `.txt`** zijn (PDF wint als er meerdere formaten liggen). Ontwerp: `docs/superpowers/specs/2026-06-16-acquisitie-dashboard-sync-design.md`.
 
-**Google Drive-valkuil:** File Stream houdt bestanden soms als placeholder (metadata lokaal, inhoud niet). `pdftotext` hangt dan of geeft lege output. `pdfText()` behandelt dat als onleesbaar (`null`), slaat het bestand over, en een live-run **breekt af** i.p.v. spookprojecten aan te maken of seed-regels te wissen. Vereist `pdftotext` (`brew install poppler`).
+Statusmap → wat er gebeurt:
+
+| Map | `pipeline_status` | finance-regel (`fin_acq_<projectid>`) |
+|---|---|---|
+| `1. Pending` | `offerte_verzonden` | — |
+| `2. Geaccepteerd` | `geaccepteerd` | **`verwacht`** |
+| `3. Afgewezen` | `verloren` | — |
+| `4. Gefactureerd` | `afgerond` | `gefactureerd` |
+| `5. Betaald` | `afgerond` | `ontvangen` |
+
+Eén finance-id per project, dus een map verslepen **werkt de bestaande regel bij** i.p.v. te verdubbelen.
+
+**Wat een live-run met bestaande rijen doet:** van een project dat al bestaat wordt **alleen `pipeline_status` gepatcht** — naam, bedrag en omschrijving blijven staan. Alleen nieuwe projecten krijgen een volledige insert. Handmatige verfijningen in het dashboard overleven de sync dus.
+
+### Vallen (allemaal een keer misgegaan)
+- **Google Drive-placeholders.** File Stream houdt bestanden soms als placeholder (metadata lokaal, inhoud niet). `pdftotext` hangt dan of geeft lege output. `pdfText()` geeft `null` (≠ `''`), slaat het bestand over, en een live-run **breekt af** tenzij `--force` — anders ontstaan spookprojecten ("Onbekend: 003") of sneuvelen seed-regels. Vereist `pdftotext` (`brew install poppler`). Herstellen: in Finder rechtsklik map → *Download now*.
+- **Klant bestaat al onder een ander id.** De klantnaam wordt naar een id geslugd (`GB Steel and Wood` → `cus_gb_steel_and_wood`) terwijl de klant al bestond als `cus_gb_steel` → dubbele klant én dubbel project. `main()` matcht daarom eerst op genormaliseerde naam. Bestaat een project al handmatig? Zet 'm in **`ID_ALIAS`**, anders komt er een `prj_acq_*` naast.
+- **Eén klant, meerdere projecten.** De klant→project-heuristiek haakt af zodra een klant een 2e project heeft; z'n facturen vallen dan stil uit de sync (alleen een `⚑`-regel). Gebruik **`INVOICE_FOLDER_PROJECT`** om een factuurmap hard aan een project te pinnen.
+- **MichielPro is een kanaal, geen klant.** Michiel haalt opdrachten binnen (Onview, PharmaPartners, PinkRoccade) en wij factureren hém. De eindklant staat in de staart van de mapnaam. Boek nooit op "MichielPro" zelf.
+- **Bedragen niet raden.** Bandbreedtes ("€31.500–€33.300") of afgeleide bedragen ("50% van €2.222") parset geen enkele regex betrouwbaar → pin ze in `scripts/acquisitie-overrides.json` (op de acq-basis-id, vóór alias). Notitie-offertes met expliciete velden (`Klant:` / `Omschrijving:` / `Bedrag:`) leest `parseNote()` wel.
+- **Datum-tokens botsen.** Twee mappen van dezelfde dag deelden één id-token; wie welk id kreeg hing af van de leesvolgorde van de map. Id's worden daarom in een tweede pass toegekend, met klant-suffix bij een botsing.
+- **`timeout` bestaat niet op deze Mac.** Gebruik geen `timeout ...` in shell-checks (faalt stil met exit 127); `spawnSync`'s `timeout`-optie doet dat werk.
