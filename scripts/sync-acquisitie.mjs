@@ -41,6 +41,7 @@ const STATUS_BY_PREFIX = [
 // factuurregel (income) schrijven, zodat het bord + Finance over de hele
 // levensloop kloppen. null = geen finance.
 const PAYMENT_BY_PREFIX = [
+  ['2.', 'verwacht'],     // 2. Geaccepteerd → toegezegd: nog uitvoeren + factureren
   ['4.', 'gefactureerd'], // 4. Gefactureerd → wacht op betaling
   ['5.', 'ontvangen'],    // 5. Betaald → ontvangen
 ];
@@ -76,6 +77,7 @@ const ID_ALIAS = {
   prj_acq_160604: 'prj_tilburg_keynote',    // Keynote OR — heeft al 1 taak
   prj_acq_260406: 'prj_solosolis_vert',     // Vertaalflow — bestaand, €6.000 + historie
   prj_acq_2607002: 'prj_solosolis_stock',   // Binnenkomende voorraad = bestaand 'pending stock in admin panel'
+  prj_acq_260616: 'prj_gb_steel',           // GB Steel-offerte stond al handmatig in het dashboard
 };
 
 // Per-offerte correcties (bedrag/naam/klant). Gevuld voor de backfill.
@@ -556,6 +558,22 @@ async function main() {
   const existingProjects = await sb('projects?select=id,customer_id,name');
   const existingFinance = await sb('finance_entries?select=id,project_id,payment_status,amount,type');
 
+  // Bestaande klant op naam herkennen. buildRecords() kent de klantenlijst nog niet
+  // en leidt het id af uit de naam ("GB Steel and Wood" → cus_gb_steel_and_wood),
+  // terwijl die klant al bestond als cus_gb_steel → dubbele klant + dubbel project.
+  const custByNameNorm = {};
+  for (const c of existingCustomers) custByNameNorm[normName(c.name)] = c;
+  const haveCustIds = new Set(existingCustomers.map((c) => c.id));
+  for (const r of records) {
+    if (haveCustIds.has(r.customer_id)) continue;
+    const match = custByNameNorm[normName(r.customerObj?.name || '')];
+    if (match) {
+      flags.push(`klant hergebruikt op naam: "${match.name}" → ${match.id} (i.p.v. nieuw ${r.customer_id})`);
+      r.customer_id = match.id;
+      r.customerObj = match;
+    }
+  }
+
   const { invoices, flags: invFlags, newCustomers: invNewCustomers, newProjects: invNewProjects, custWithUnreadable } = buildInvoiceRecords(existingCustomers, existingProjects);
 
   // Seed finance-regels die vervangen worden door Karin's facturen: income met
@@ -618,7 +636,20 @@ async function main() {
   const allFlags = [...flags, ...invFlags, ...unreadableFlags, ...coveredFlags];
   if (allFlags.length) { console.log(`\n⚑ Aandacht:`); for (const f of allFlags) console.log(`   - ${f}`); }
 
-  const finPlan = records.filter((r) => r.payment && !r.aliased); // offerte-folders in 4./5.
+  // Welke offerte-mappen krijgen een eigen finance-regel?
+  //  - 4./5. (gefactureerd/ontvangen): alleen niet-gealiaste acq-offertes. Gealiaste/
+  //    legacy projecten hebben hun échte factuur al; die zou je dubbeltellen.
+  //  - 2. Geaccepteerd (verwacht): toegezegd werk — nog uitvoeren en factureren, maar
+  //    het geld komt. Ook gealiaste projecten mogen dit, zolang er nog geen ándere
+  //    income-regel op het project staat (bv. een handmatig ingeplande termijn).
+  //    De id is `fin_acq_<projectid>`, dus zodra de map naar 4./5. schuift wordt
+  //    dezelfde regel bijgewerkt naar gefactureerd/ontvangen i.p.v. verdubbeld.
+  const finPlan = records.filter((r) => {
+    if (!r.payment) return false;
+    if (r.payment !== 'verwacht') return !r.aliased;
+    const own = `fin_acq_${r.id}`;
+    return !existingFinance.some((f) => f.type === 'income' && f.project_id === r.id && f.id !== own);
+  });
 
   if (DRY) {
     const skipped = UNREADABLE.length ? ` · ${UNREADABLE.length} onleesbaar overgeslagen` : '';
