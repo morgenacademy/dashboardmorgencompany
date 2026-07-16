@@ -48,13 +48,21 @@ const PAYMENT_BY_PREFIX = [
 // Bekende klanten: gedetecteerd via substring in map-/bestandsnaam.
 // Wink&See bestaat nog niet in Supabase en wordt aangemaakt.
 const KNOWN_CLIENTS = [
-  { id: 'cus_winksee',     name: 'Wink&See',        type: 'klant',    industry: 'E-commerce / retail', match: [/wink\s*&?\s*see/i] },
-  { id: 'cus_gem_tilburg', name: 'Gemeente Tilburg', type: 'prospect', industry: 'Overheid',            match: [/tilburg/i] },
-  { id: 'cus_solosolis',   name: 'Solo Solis',       type: 'klant',    industry: 'E-commerce / retail', match: [/solo\s*solis/i] },
+  { id: 'cus_winksee',       name: 'Wink&See',         type: 'klant',    industry: 'E-commerce / retail', match: [/wink\s*&?\s*see/i] },
+  { id: 'cus_gem_tilburg',   name: 'Gemeente Tilburg',  type: 'prospect', industry: 'Overheid',            match: [/tilburg/i] },
+  { id: 'cus_solosolis',     name: 'Solo Solis',        type: 'klant',    industry: 'E-commerce / retail', match: [/solo\s*solis/i] },
+  // Eindklanten van het MichielPro-kanaal: staan in de mapnaam, niet in de afzender.
+  { id: 'cus_america_tower', name: 'PharmaPartners',    type: 'klant',    industry: 'Zorg / software',     match: [/pharma\s*partners/i] },
+  { id: 'cus_onview',        name: 'Onview',            type: 'klant',    industry: '',                    match: [/onview/i] },
+  { id: 'cus_pinkroccade',   name: 'PinkRoccade',       type: 'klant',    industry: 'Zorg / software',     match: [/pink\s*roccade/i] },
 ];
 
 // Mappen die volledig overgeslagen worden (zelden nodig — alias heeft voorkeur).
-const SKIP_FOLDERS = [];
+const SKIP_FOLDERS = [
+  // Notitie ("nog 50% open van €2.222"), geen offerte. Dat restant staat al als
+  // verwachte finance-regel op prj_zjoske; syncen zou het dubbel tellen.
+  '260616 Zjoske Kanters',
+];
 
 // Folder-offerte → bestaand (handmatig) project-id. Voorkomt dubbels met
 // projecten die al taken/finance/historie hebben: de sync update die rij
@@ -115,11 +123,61 @@ function pdfText(file) {
   return text;
 }
 
-// Parse Nederlands bedrag "€ 2.000,00" / "€ 10.500" → number.
+// Offertes komen als PDF, HTML (gegenereerd voorstel) of TXT (snelle notitie).
+const OFFERTE_EXTS = ['.pdf', '.html', '.htm', '.txt'];
+
+function decodeEntities(s) {
+  return s
+    .replace(/&nbsp;/g, ' ').replace(/&euro;/g, '€').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+}
+
+// HTML → platte tekst, zodat dezelfde extractAmount/pdfIsOfferte-logica werkt.
+function htmlText(file) {
+  if (_pdfCache.has(file)) return _pdfCache.get(file);
+  let text = null, reason = '';
+  try {
+    let s = readFileSync(file, 'utf8');
+    s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ');
+    // Blok-einden → newline, zodat "Totaal" en het bedrag op leesbare regels staan.
+    s = s.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|tr|h[1-6]|td|th|section)>/gi, '\n');
+    s = decodeEntities(s.replace(/<[^>]+>/g, ' '));
+    s = s.split('\n').map((l) => l.replace(/[ \t ]+/g, ' ').trim()).filter(Boolean).join('\n');
+    if (/[A-Za-z0-9]/.test(s)) text = s; else reason = 'geen tekst in HTML';
+  } catch (e) { reason = `HTML onleesbaar: ${e.message}`; }
+  if (text === null) UNREADABLE.push({ file, reason });
+  _pdfCache.set(file, text);
+  return text;
+}
+
+function txtText(file) {
+  if (_pdfCache.has(file)) return _pdfCache.get(file);
+  let text = null, reason = '';
+  try {
+    const s = readFileSync(file, 'utf8');
+    if (/[A-Za-z0-9]/.test(s)) text = s; else reason = 'leeg tekstbestand';
+  } catch (e) { reason = `TXT onleesbaar: ${e.message}`; }
+  if (text === null) UNREADABLE.push({ file, reason });
+  _pdfCache.set(file, text);
+  return text;
+}
+
+// Tekst van een offerte-/factuurbestand, ongeacht formaat. null = onleesbaar.
+function fileText(file) {
+  const ext = extname(file).toLowerCase();
+  if (ext === '.html' || ext === '.htm') return htmlText(file);
+  if (ext === '.txt') return txtText(file);
+  return pdfText(file);
+}
+
+// Parse Nederlands bedrag "€ 2.000,00" / "€ 10.500" / "EUR 495,-" → number.
 function parseEuro(s) {
-  const m = String(s).match(/€\s*-?\s*([\d.]+(?:,\d{1,2})?)/);
+  const m = String(s).match(/(?:€|\bEUR\b)\s*-?\s*([\d.]+(?:,\d{1,2})?)/i);
   if (!m) return null;
-  const num = m[1].replace(/\./g, '').replace(',', '.');
+  // "495,-" → 495 (streepje = geen centen), anders komma als decimaalteken.
+  const num = m[1].replace(/\./g, '').replace(/,$/, '').replace(',', '.');
   const v = Number(num);
   return Number.isFinite(v) ? v : null;
 }
@@ -130,7 +188,11 @@ function extractAmount(text) {
   const lines = text.split(/\r?\n/);
   const totaalIdx = [];
   lines.forEach((l, i) => { if (/totaal/i.test(l)) totaalIdx.push(i); });
-  if (!totaalIdx.length) return null;
+  if (!totaalIdx.length) {
+    // Geen "Totaal"-regel: korte notitie-offertes ankeren op een "Bedrag:"-regel.
+    for (const l of lines) if (/\bbedrag\b/i.test(l)) { const a = parseEuro(l); if (a && a > 0) return a; }
+    return null;
+  }
   // Voorkeur: excl. btw / eenmalig eerst; "incl. BTW" als laatste redmiddel (bruto).
   const ranked = totaalIdx.sort((a, b) => {
     const score = (i) => (/eenmalig|excl/i.test(lines[i]) ? 0 : /incl/i.test(lines[i]) ? 2 : 1);
@@ -189,18 +251,32 @@ function listFiles(p) {
   return readdirSync(p).filter((n) => !n.startsWith('.') && statSync(join(p, n)).isFile());
 }
 
-// Kies de offerte-PDF's in een submap.
+// Kies de offerte-bestanden in een submap. PDF wint van HTML als beide er zijn
+// (zelfde offerte in twee formaten → anders twee projecten van één offerte).
 function chooseOffertePdfs(files) {
-  const pdfs = files.filter((f) => extname(f).toLowerCase() === '.pdf' && !/invoice|factuur/i.test(f));
-  const withOfferte = pdfs.filter((f) => /offerte/i.test(f));
-  return withOfferte.length ? withOfferte : pdfs;
+  const cands = files.filter((f) => OFFERTE_EXTS.includes(extname(f).toLowerCase()) && !/invoice|factuur/i.test(f));
+  const pdfs = cands.filter((f) => extname(f).toLowerCase() === '.pdf');
+  const pool = pdfs.length ? pdfs : cands;
+  const withOfferte = pool.filter((f) => /offerte/i.test(f));
+  return withOfferte.length ? withOfferte : pool;
 }
 
 // ---------- Facturen (map 4./5. = klant-mappen met factuur-PDF's) ----------
 // Klant-mapnaam → bestaand customer-id, voor namen die niet tekstueel matchen.
 const CLIENT_ALIAS = {
   'vereniging logistiek management': 'cus_vml',
-  'michielpro': 'cus_pinkroccade', // factuur via MichielPro = PinkRoccade-deal
+};
+
+// Factuurmap → project. Nodig wanneer de mapnaam niet genoeg is om het juiste
+// project te kiezen: MichielPro is een kanaal (Michiel factureert de eindklant,
+// wij factureren Michiel), dus "MichielPro" zegt niets over wie de klant is — dat
+// staat in de staart van de mapnaam. Bovendien heeft PharmaPartners meerdere
+// projecten, waardoor de klant→project-heuristiek zou afhaken.
+// Sleutel = mapnaam zonder datum-prefix, genormaliseerd (dus datum-onafhankelijk).
+const INVOICE_FOLDER_PROJECT = {
+  'michielpro invoice claudecode onview': 'prj_onview_claude',
+  'michielpro invoice claudecode pharmapartners': 'prj_america_claude_code',
+  'michielpro invoice n8n training pink roccade': 'prj_pinkroccade_trainingen',
 };
 
 function normName(s) {
@@ -215,17 +291,18 @@ function pdfIsOfferte(text) { return /\bofferte\b|\bvoorstel\b/i.test(text); }
 // Geeft 'unreadable' als de map wél PDF's heeft maar geen enkele leesbaar is; dan
 // mag er niets uit afgeleid worden (anders wordt een factuur een spookofferte).
 function classifyFolder(subPath, files) {
-  let hasInv = false, hasOff = false, readable = 0, pdfs = 0;
+  let hasInv = false, hasOff = false, readable = 0, docs = 0;
   for (const f of files) {
-    if (extname(f).toLowerCase() !== '.pdf') continue;
-    pdfs++;
-    const t = pdfText(join(subPath, f));
+    const ext = extname(f).toLowerCase();
+    if (!OFFERTE_EXTS.includes(ext)) continue;
+    docs++;
+    const t = fileText(join(subPath, f));
     if (t === null) continue; // onleesbaar → negeren, niet raden
     readable++;
     if (pdfIsOfferte(t)) hasOff = true;
-    if (pdfIsInvoice(t)) hasInv = true;
+    if (ext === '.pdf' && pdfIsInvoice(t)) hasInv = true; // facturen zijn altijd PDF
   }
-  if (pdfs && !readable) return 'unreadable';
+  if (docs && !readable) return 'unreadable';
   if (hasOff) return 'offerte';
   if (hasInv) return 'invoice';
   return 'offerte';
@@ -239,7 +316,9 @@ function parseInvoice(text) {
   // "BTW 21% over € X" → X is de ex-btw basis (werkt voor beide factuur-formaten).
   if (ex == null) { const m = text.match(/btw\s*\d+\s*%\s*over\s*(€\s*[\d.]+,\d{2})/i); if (m) ex = parseEuro(m[1]); }
   if (ex == null) for (const l of lines) if (/totaal incl|factuurbedrag/i.test(l)) { const a = parseEuro(l); if (a) ex = a; }
-  const dm = text.match(/Factuurdatum\s+(\d{2})-(\d{2})-(\d{4})/i);
+  // Karin's format heeft "Factuurdatum <datum>"; het MichielPro-format zet de datum
+  // in een kolom onder het kopje "datum". Val daarom terug op de eerste losse datum.
+  const dm = text.match(/Factuurdatum\s+(\d{2})-(\d{2})-(\d{4})/i) || text.match(/\b(\d{2})-(\d{2})-(\d{4})\b/);
   const date = dm ? `${dm[3]}-${dm[2]}-${dm[1]}` : null;
   let desc = '';
   const oi = lines.findIndex((l) => /Omschrijving/i.test(l));
@@ -270,23 +349,38 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
       if (classifyFolder(subPath, files) !== 'invoice') continue;
 
       const clientRaw = sub.replace(/^\d{6}\s*-?\s*/, '').replace(/\s*-?\s*invoice\b.*$/i, '').replace(/morgenacademy/i, '').trim();
-      const aliasId = CLIENT_ALIAS[normName(clientRaw)];
-      const cust = aliasId ? existingCustomers.find((c) => c.id === aliasId) : custByNorm[normName(clientRaw)];
 
-      let customer_id;
-      if (cust) customer_id = cust.id;
-      else {
-        customer_id = `cus_${slugify(clientRaw)}`;
-        if (!seenCust.has(customer_id)) { seenCust.add(customer_id); newCustomers.push({ id: customer_id, name: clientRaw, type: 'klant', industry: '' }); }
-      }
+      // Expliciete pin (mapnaam zonder datum) wint: kiest project én klant direct,
+      // langs de klant→project-heuristiek heen.
+      const pinned = INVOICE_FOLDER_PROJECT[normName(sub.replace(/^\d{6}\s*-?\s*/, ''))];
+      let customer_id, project_id, clientLabel = clientRaw;
+      if (pinned) {
+        const p = existingProjects.find((x) => x.id === pinned);
+        if (!p) { flags.push(`pin verwijst naar onbekend project ${pinned}: ${sub}`); continue; }
+        project_id = p.id;
+        customer_id = p.customer_id;
+        clientLabel = existingCustomers.find((c) => c.id === p.customer_id)?.name || clientRaw;
+      } else {
+        const aliasId = CLIENT_ALIAS[normName(clientRaw)];
+        const detected = detectClient(sub); // eindklant staat vaak in de mapnaam
+        const cust = aliasId ? existingCustomers.find((c) => c.id === aliasId)
+                  : (detected ? existingCustomers.find((c) => c.id === detected.id) : null)
+                  || custByNorm[normName(clientRaw)];
 
-      const projs = projByCust[customer_id] || [];
-      let project_id;
-      if (projs.length === 1) project_id = projs[0].id;
-      else if (projs.length > 1) { flags.push(`${clientRaw}: ${projs.length} projecten — facturen NIET auto-verwerkt (handmatig reconcileren)`); continue; }
-      else {
-        project_id = `prj_${slugify(clientRaw)}`;
-        if (!newProjects.find((p) => p.id === project_id)) newProjects.push({ id: project_id, customer_id, name: `${clientRaw}: dienst`, pipeline_status: 'afgerond', owner: 'Karin' });
+        if (cust) clientLabel = cust.name;
+        if (cust) customer_id = cust.id;
+        else {
+          customer_id = `cus_${slugify(clientRaw)}`;
+          if (!seenCust.has(customer_id)) { seenCust.add(customer_id); newCustomers.push({ id: customer_id, name: clientRaw, type: 'klant', industry: '' }); }
+        }
+
+        const projs = projByCust[customer_id] || [];
+        if (projs.length === 1) project_id = projs[0].id;
+        else if (projs.length > 1) { flags.push(`${clientRaw}: ${projs.length} projecten — facturen NIET auto-verwerkt (handmatig reconcileren)`); continue; }
+        else {
+          project_id = `prj_${slugify(clientRaw)}`;
+          if (!newProjects.find((p) => p.id === project_id)) newProjects.push({ id: project_id, customer_id, name: `${clientRaw}: dienst`, pipeline_status: 'afgerond', owner: 'Karin' });
+        }
       }
 
       for (const f of files) {
@@ -304,7 +398,7 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
           num: inf.num || key,
           desc: inf.desc,
           owner: /harmen van heist/i.test(t) ? 'Harmen' : 'Karin', // factuur-afzender
-          client: cust ? cust.name : clientRaw,
+          client: clientLabel,
           sourceFile: `${statusDir}/${sub}/${f}`,
         });
         if (inf.ex == null) flags.push(`geen bedrag uit factuur: ${f}`);
@@ -315,9 +409,8 @@ function buildInvoiceRecords(existingCustomers, existingProjects) {
 }
 
 function buildRecords() {
-  const records = [];
   const flags = [];
-  const usedIds = new Set();
+  const cands = [];
 
   for (const statusDir of listDirs(ACQ_DIR)) {
     const pipeline_status = statusForFolder(statusDir);
@@ -335,7 +428,7 @@ function buildRecords() {
       // Factuur-mappen (klant-map met facturen) in 4./5. → buildInvoiceRecords.
       if ((statusDir.startsWith('4.') || statusDir.startsWith('5.')) && kind === 'invoice') continue;
       // Onleesbare PDF's nooit als offerte gebruiken.
-      const offertes = chooseOffertePdfs(files).filter((f) => pdfText(join(subPath, f)) !== null);
+      const offertes = chooseOffertePdfs(files).filter((f) => fileText(join(subPath, f)) !== null);
       if (!offertes.length) { flags.push(`geen offerte-PDF in: ${statusDir}/${sub}`); continue; }
       if (offertes.length > 1) flags.push(`${offertes.length} offertes in: ${statusDir}/${sub} (per PDF gesplitst)`);
 
@@ -343,38 +436,62 @@ function buildRecords() {
         const fileBase = basename(file, extname(file));
         const hay = `${sub} ${fileBase}`;
         const client = detectClient(hay);
-        const clientName = client ? client.name : (fileBase.replace(/^\d{6,7}\s*/, '').split(/\s*[-–]\s*/)[0].trim() || 'Onbekend');
+        // Fallback op de MAPnaam, niet de bestandsnaam: de conventie is
+        // `JJMMDD Klant — Titel`, dus daar staat de klant. Een bestand als
+        // "260616 Offerte GB Steel and Wood.pdf" zou anders "Offerte GB Steel
+        // and Wood" als klantnaam opleveren.
+        const folderClient = sub.replace(/^\d{6,7}\s*-?\s*/, '').split(/\s*[-–—:]\s*/)[0].trim();
+        const clientName = client ? client.name : (folderClient || 'Onbekend');
         const customer_id = client ? client.id : `cus_${slugify(clientName)}`;
         const date = folderDate(sub) || folderDate(fileBase);
         const title = deriveTitle(fileBase, clientName);
         const idToken = (fileBase.match(/^(\d{6,7})/) || [])[1] || slugify(`${date || ''}_${title}`);
-        let baseId = `prj_acq_${idToken}`;
-        while (usedIds.has(baseId)) baseId = `${baseId}_x`;
-        usedIds.add(baseId);
-        const id = ID_ALIAS[baseId] || baseId; // bestaand project hergebruiken indien gealiast
 
         const fullPath = join(subPath, file);
-        const amount = extractAmount(pdfText(fullPath));
-        if (amount == null) flags.push(`geen bedrag uit PDF: ${file}`);
+        const amount = extractAmount(fileText(fullPath));
+        if (amount == null) flags.push(`geen bedrag uit de offerte: ${statusDir}/${sub}/${file}`);
 
-        const rec = {
-          id,
-          aliased: id !== baseId,
-          customer_id,
-          customerObj: client || { id: customer_id, name: clientName, type: 'prospect', industry: '' },
-          name: `${clientName}: ${title}`,
-          pipeline_status,
-          payment,
-          product_type: guessProductType(hay),
-          forecast_amount: amount || 0,
-          date,
-          sourceFile: `${statusDir}/${sub}/${file}`,
-        };
-        // Overrides toepassen (op de acq-basis-id, vóór alias).
-        Object.assign(rec, OVERRIDES[baseId] || {});
-        records.push(rec);
+        cands.push({ statusDir, sub, file, client, clientName, customer_id, date, title, idToken, hay, amount, pipeline_status, payment });
       }
     }
+  }
+
+  // Id's pas toekennen als álle offertes bekend zijn. Twee mappen van dezelfde dag
+  // ("260616 GB Steel and Wood" + "260616 Zjoske Kanters") delen hetzelfde token;
+  // met een `_x`-suffix zou wie-welke-id-krijgt afhangen van de leesvolgorde van de
+  // map — en dus stilletjes omwisselen. Bij een botsing krijgt daarom ELKE offerte
+  // de klant-suffix, wat volgorde-onafhankelijk is.
+  const tokenCount = {};
+  for (const c of cands) tokenCount[c.idToken] = (tokenCount[c.idToken] || 0) + 1;
+
+  const records = [];
+  const usedIds = new Set();
+  for (const c of cands) {
+    let baseId = tokenCount[c.idToken] > 1
+      ? `prj_acq_${c.idToken}_${slugify(c.clientName)}`
+      : `prj_acq_${c.idToken}`;
+    // Zelfde klant, zelfde dag, twee offertes → titel erbij.
+    if (usedIds.has(baseId)) baseId = `prj_acq_${c.idToken}_${slugify(`${c.clientName} ${c.title}`)}`;
+    while (usedIds.has(baseId)) baseId = `${baseId}_x`;
+    usedIds.add(baseId);
+    const id = ID_ALIAS[baseId] || baseId; // bestaand project hergebruiken indien gealiast
+
+    const rec = {
+      id,
+      aliased: id !== baseId,
+      customer_id: c.customer_id,
+      customerObj: c.client || { id: c.customer_id, name: c.clientName, type: 'prospect', industry: '' },
+      name: `${c.clientName}: ${c.title}`,
+      pipeline_status: c.pipeline_status,
+      payment: c.payment,
+      product_type: guessProductType(c.hay),
+      forecast_amount: c.amount || 0,
+      date: c.date,
+      sourceFile: `${c.statusDir}/${c.sub}/${c.file}`,
+    };
+    // Overrides toepassen (op de acq-basis-id, vóór alias).
+    Object.assign(rec, OVERRIDES[baseId] || {});
+    records.push(rec);
   }
   return { records, flags };
 }
