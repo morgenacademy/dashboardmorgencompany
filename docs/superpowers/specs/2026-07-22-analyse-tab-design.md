@@ -61,8 +61,9 @@ tab niet uiteenlopen. CLAUDE.md waarschuwt hier expliciet voor.
 
 ## Blok 1 — Analyse (live)
 
-Alles jaargescoped op het lopende jaar, net als de rest van het dashboard. Vijf
-sub-blokken:
+Alles jaargescoped op het lopende jaar, net als de rest van het dashboard. UI-teksten
+beschrijven de **stand van nu** — geen historie ("stond ooit op other", "vóór de
+correctie"). Vijf sub-blokken:
 
 1. **Veredeling per label** — omzet per `service_label`, gesplitst in betaald /
    gefactureerd / open offerte. Naast de vier labels een expliciete regel dat de

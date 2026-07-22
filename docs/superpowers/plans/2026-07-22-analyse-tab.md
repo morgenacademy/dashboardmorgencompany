@@ -663,9 +663,10 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, year = new Date().g
     <p class="eyebrow">${esc(title)}</p>${sub ? `<p class="muted">${esc(sub)}</p>` : ''}${body}
   </section>`;
 
+  // Intro beschrijft de stand van NU — geen historie ("stond ooit op other" e.d.).
   return `<div class="page an-page">
     <header class="page-head"><h1>Analyse</h1>
-      <p>Live uit Supabase · jaar ${year}. Deze tab telt gerealiseerde omzet + open pipeline; de Overview-tegels tellen toegezegd werk.</p>
+      <p>Live uit Supabase · jaar ${year}. Gerealiseerde omzet + open pipeline.</p>
     </header>
 
     ${section('Veredeling', 'Omzet per label (betaald + gefactureerd + open offerte).', `<div class="an-bars">${veredelingHtml}</div>`)}
