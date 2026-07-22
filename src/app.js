@@ -5,6 +5,12 @@ import {
   upsertCustomer, upsertFinance, deleteFinance, nextId,
 } from './data/store.js';
 import { lineChart, barChart, dualLineChart, teamMonthlyChart } from './ui/charts.js';
+import {
+  actualExpenseEntries,
+  buildActualVendorRows,
+  buildExpenseForecast,
+  buildFinanceMonthlySeries,
+} from './finance-model.js';
 
 const PIPELINE_STAGES = [
   { value: 'verkennen',         label: 'Verkennen' },
@@ -96,6 +102,14 @@ function fmtDate(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleDateString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function fmtMonthKey(value, includeYear = true) {
+  if (!/^\d{4}-\d{2}$/.test(value || '')) return '—';
+  const [year, month] = value.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString('nl-NL', {
+    month: 'long',
+    ...(includeYear ? { year: 'numeric' } : {}),
+  });
 }
 function escapeHtml(value = '') {
   return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
@@ -497,21 +511,6 @@ function renderOverview(db) {
   const gefactureerd = tileFromBucket(acqBuckets.invoiced);  // Gefactureerd
   const ontvangen    = tileFromBucket(acqBuckets.paid);      // Betaald
 
-  // ===== Cashflow / run-rate =====
-  const monthlyIncome = db.finance
-    .filter((f) => f.type === 'income' && f.recurring === 'monthly')
-    .reduce((acc, f) => { acc[f.project_id || f.vendor || f.id] = Number(f.amount); return acc; }, {});
-  const recurringIncomeMonthly = Object.values(monthlyIncome).reduce((s, v) => s + v, 0);
-  const monthlyExpense = db.finance
-    .filter((f) => f.type === 'expense' && f.recurring === 'monthly')
-    .reduce((acc, f) => {
-      const key = f.vendor || f.description;
-      acc[key] = Math.max(acc[key] || 0, Number(f.amount));
-      return acc;
-    }, {});
-  const recurringExpenseMonthly = Object.values(monthlyExpense).reduce((s, v) => s + v, 0);
-  const runRateNetto = recurringIncomeMonthly - recurringExpenseMonthly;
-
   // ===== Per service label (Inspire / Build / Train / Implement) =====
   // Alleen projecten die echt 'gevallen' zijn: pipeline in COMMITTED (geaccepteerd / uitvoering / afgerond).
   const labelTotals = {};
@@ -536,67 +535,52 @@ function renderOverview(db) {
   const openTasks = db.tasks.filter((t) => t.status !== 'done');
   const overdueTasks = openTasks.filter((t) => relDays(t.due_date) !== null && relDays(t.due_date) < 0);
 
-  const expenseYtd = db.finance.filter((f) => f.type === 'expense' && f.date >= yearStart && f.date <= yearEnd).reduce((s, f) => s + Number(f.amount), 0);
+  const expenseYtd = actualExpenseEntries(db.finance)
+    .filter((f) => f.date >= yearStart && f.date <= today)
+    .reduce((s, f) => s + Number(f.amount), 0);
 
   // === Team chart: per maand opbrengst/kosten per persoon ===
-  // 4 lijnen: Karin opbrengst, Karin kosten, Harmen opbrengst, Harmen kosten
+  // Actuals blijven in hun transactiemaand; alleen toekomstige maanden krijgen
+  // de expliciete run-rate uit dezelfde finance-rekenlaag als de Finance-pagina.
   const todayMonth = today.slice(0, 7);
-  const months = [];
-  for (let m = 0; m < 12; m++) {
-    const d = new Date(Number(yearStart.slice(0,4)), m, 1);
-    months.push({
-      month: d.toISOString().slice(0, 7),
-      label: d.toLocaleDateString('nl-NL', { month: 'short' }),
-      karinRevenue: 0, karinCosts: 0, harmenRevenue: 0, harmenCosts: 0, danielleRevenue: 0, danielleCosts: 0,
-    });
-  }
-  const monthsByKey = Object.fromEntries(months.map((m) => [m.month, m]));
-
+  const financeByPerson = { Karin: [], Harmen: [], Danielle: [] };
   for (const f of db.finance) {
-    if (!f.date || f.date < yearStart || f.date > yearEnd) continue;
     const amount = Number(f.amount || 0);
     if (!amount) continue;
-    // Bepaal toewijzing per maand
-    const targetMonths = [];
-    if (f.recurring === 'monthly') {
-      // Spread over alle maanden vanaf de start-datum (of vanaf jaar-start als eerder)
-      const fromIdx = Math.max(0, months.findIndex((m) => m.month >= f.date.slice(0, 7)));
-      for (let i = fromIdx; i < months.length; i++) targetMonths.push(months[i]);
-    } else {
-      const m = monthsByKey[f.date.slice(0, 7)];
-      if (m) targetMonths.push(m);
-    }
-    if (!targetMonths.length) continue;
-
-    // Wie is de eigenaar? Project-owner heeft voorrang, anders f.owner
     const proj = f.project_id ? projectsById[f.project_id] : null;
     const ownerStr = (proj?.owner) || f.owner || '';
     const shares = ownerShares(ownerStr);
-    const keys = Object.keys(shares);
-    if (!keys.length) continue;
-
-    for (const m of targetMonths) {
-      for (const person of keys) {
-        const personShare = shares[person] * amount;
-        if (f.type === 'income') {
-          if (person === 'Karin')    m.karinRevenue    += personShare;
-          if (person === 'Harmen')   m.harmenRevenue   += personShare;
-          if (person === 'Danielle') m.danielleRevenue += personShare;
-        } else {
-          if (person === 'Karin')    m.karinCosts    += personShare;
-          if (person === 'Harmen')   m.harmenCosts   += personShare;
-          if (person === 'Danielle') m.danielleCosts += personShare;
-        }
-      }
+    for (const person of Object.keys(shares)) {
+      if (!financeByPerson[person]) continue;
+      financeByPerson[person].push({ ...f, amount: amount * shares[person], owner: person });
     }
   }
 
-  // Totaal netto per maand = (Karin + Harmen opbrengst) − (Karin + Harmen kosten)
-  for (const m of months) {
+  const personModels = Object.fromEntries(
+    Object.entries(financeByPerson).map(([person, personEntries]) => [
+      person,
+      buildFinanceMonthlySeries(personEntries, { year: yearStart.slice(0, 4) }).months,
+    ]),
+  );
+  const months = personModels.Harmen.map((month, index) => {
+    const karin = personModels.Karin[index];
+    const harmen = personModels.Harmen[index];
+    const danielle = personModels.Danielle[index];
+    const m = {
+      month: month.month,
+      label: fmtMonthKey(month.month, false).slice(0, 3),
+      karinRevenue: karin.income,
+      karinCosts: karin.expense,
+      harmenRevenue: harmen.income,
+      harmenCosts: harmen.expense,
+      danielleRevenue: danielle.income,
+      danielleCosts: danielle.expense,
+    };
     m.totalRevenue = (m.karinRevenue || 0) + (m.harmenRevenue || 0) + (m.danielleRevenue || 0);
     m.totalCosts   = (m.karinCosts || 0) + (m.harmenCosts || 0) + (m.danielleCosts || 0);
     m.totalNet     = m.totalRevenue - m.totalCosts;
-  }
+    return m;
+  });
 
   const teamSeries = [
     { key: 'totalNet',      label: 'Totaal netto',     color: '#D8FE56', bold: true },
@@ -1288,48 +1272,19 @@ function renderTaken(db) {
     </section>`;
 }
 
-function renderFinanceBreakdown(entries, q) {
+function renderFinanceBreakdown(entries, q, { yearSel, showForecast = false } = {}) {
   const personFilter = (q.person || 'totaal').toLowerCase();
-  // Per persoon filter: bepaal aandeel
-  const filtered = entries.filter((f) => {
-    if (personFilter === 'totaal') return true;
-    const owner = (f.owner || '').toLowerCase();
-    return owner.includes(personFilter);
-  });
-
-  // Groepeer per vendor + maand-van-jaar (jaar-scope is al door renderFinance
-  // toegepast op `entries`, dus dit werkt zowel voor één jaar als voor Totaal).
   const monthsLbl = [];
   for (let mi = 0; mi < 12; mi++) {
     const d = new Date(2000, mi, 1);
     monthsLbl.push({ m: String(mi + 1).padStart(2, '0'), label: d.toLocaleDateString('nl-NL', { month: 'short' }) });
   }
-
-  const rowsByVendor = {};
-  for (const f of filtered) {
-    if (!f.date) continue;
-    const mi = Number(f.date.slice(5, 7)) - 1;
-    if (mi < 0 || mi > 11) continue;
-    const vendor = f.vendor || f.description || '—';
-    if (!rowsByVendor[vendor]) rowsByVendor[vendor] = { vendor, category: f.category || '', recurring: f.recurring, total: 0, byMonth: {} };
-    const row = rowsByVendor[vendor];
-    const amount = Number(f.amount || 0);
-    if (f.recurring === 'monthly') {
-      for (let i = mi; i < 12; i++) {
-        const key = monthsLbl[i].m;
-        row.byMonth[key] = (row.byMonth[key] || 0) + amount;
-        row.total += amount;
-      }
-      if (f.category && !row.category) row.category = f.category;
-    } else {
-      const key = monthsLbl[mi].m;
-      row.byMonth[key] = (row.byMonth[key] || 0) + amount;
-      row.total += amount;
-    }
-  }
-  const vendorRows = Object.values(rowsByVendor).sort((a, b) => b.total - a.total);
-  const monthTotals = monthsLbl.map((mm) => vendorRows.reduce((s, r) => s + (r.byMonth[mm.m] || 0), 0));
-  const grandTotal = monthTotals.reduce((s, v) => s + v, 0);
+  const actualRows = buildActualVendorRows(entries, { personFilter });
+  const actualMonthTotals = monthsLbl.map((mm) => actualRows.reduce((sum, row) => sum + (row.byMonth[mm.m] || 0), 0));
+  const actualGrandTotal = actualMonthTotals.reduce((sum, value) => sum + value, 0);
+  const forecast = showForecast
+    ? buildExpenseForecast(entries, { year: yearSel, personFilter })
+    : { baseMonth: '', forecastStartMonth: '', futureMonths: [], rows: [], grandTotal: 0 };
 
   const personHref = (p) => {
     const params = new URLSearchParams(q);
@@ -1337,10 +1292,13 @@ function renderFinanceBreakdown(entries, q) {
     return `#/finance?${params.toString()}`;
   };
 
-  return `
+  const actualPanel = `
     <section class="panel">
       <div class="panel-heading">
-        <div><h2>Breakdown</h2><p>${vendorRows.length} regels · totaal ${fmtCurrency(grandTotal)}</p></div>
+        <div>
+          <h2>Actual — werkelijk geboekt</h2>
+          <p>${actualRows.length} leveranciers / regels · totaal ${fmtCurrency(actualGrandTotal)} · iedere boeking telt alleen in de eigen maand</p>
+        </div>
         <div class="person-toggle">
           ${[
             { v: 'totaal',   l: 'Totaal' },
@@ -1358,11 +1316,10 @@ function renderFinanceBreakdown(entries, q) {
               <th>Categorie</th>
               ${monthsLbl.map((mm) => `<th style="text-align:right;">${escapeHtml(mm.label)}</th>`).join('')}
               <th style="text-align:right;">Totaal</th>
-              <th>Recurring?</th>
             </tr>
           </thead>
           <tbody>
-            ${vendorRows.map((r) => `
+            ${actualRows.map((r) => `
               <tr>
                 <td><strong>${escapeHtml(r.vendor)}</strong></td>
                 <td>${escapeHtml(r.category)}</td>
@@ -1371,25 +1328,79 @@ function renderFinanceBreakdown(entries, q) {
                   return `<td style="text-align:right;${v ? '' : 'color:var(--text-muted);'}">${v ? fmtCurrency(v) : '—'}</td>`;
                 }).join('')}
                 <td style="text-align:right;"><strong>${fmtCurrency(r.total)}</strong></td>
-                <td>${(() => {
-                  const vals = monthsLbl.map((mm) => r.byMonth[mm.m]).filter((v) => v > 0);
-                  const sub = vals.length >= 3 && new Set(vals.map((v) => Math.round(v))).size === 1; // ≥3 mnd zelfde bedrag = abonnement
-                  return (r.recurring === 'monthly' || sub) ? '✓ Maandelijks' : r.recurring === 'one_off' ? 'Eenmalig' : escapeHtml(r.recurring || '');
-                })()}</td>
               </tr>
-            `).join('') || `<tr><td colspan="${4 + monthsLbl.length}" class="empty-cell">Geen records</td></tr>`}
+            `).join('') || `<tr><td colspan="${3 + monthsLbl.length}" class="empty-cell">Geen actuals in deze selectie</td></tr>`}
           </tbody>
           <tfoot>
             <tr style="border-top:2px solid rgba(155,111,207,.4);">
               <td colspan="2"><strong>Totaal</strong></td>
-              ${monthTotals.map((v) => `<td style="text-align:right;"><strong>${v ? fmtCurrency(v) : '—'}</strong></td>`).join('')}
-              <td style="text-align:right;"><strong>${fmtCurrency(grandTotal)}</strong></td>
-              <td></td>
+              ${actualMonthTotals.map((v) => `<td style="text-align:right;"><strong>${v ? fmtCurrency(v) : '—'}</strong></td>`).join('')}
+              <td style="text-align:right;"><strong>${fmtCurrency(actualGrandTotal)}</strong></td>
             </tr>
           </tfoot>
         </table>
       </div>
     </section>`;
+
+  if (!showForecast) return actualPanel;
+
+  const forecastPanel = `
+    <section class="panel breakdown-forecast-panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Prognose — toekomstige maanden</h2>
+          <p>${forecast.baseMonth
+            ? `${forecast.rows.length} leveranciers / regels · ${fmtCurrency(forecast.grandTotal)} resterend jaar · vanaf ${escapeHtml(fmtMonthKey(forecast.forecastStartMonth))} · basis ${escapeHtml(fmtMonthKey(forecast.baseMonth))}`
+            : 'Alleen beschikbaar voor het lopende jaar zodra er een volledig afgesloten basismaand is.'}</p>
+        </div>
+        ${forecast.baseMonth ? `<span class="badge badge-info">Basis: ${escapeHtml(fmtMonthKey(forecast.baseMonth))}</span>` : ''}
+      </div>
+      ${forecast.rows.length ? `
+        <p class="breakdown-explainer">Banktransacties gebruiken het leverancierstotaal van de laatste volledig afgesloten maand. Handmatige vaste maandregels blijven als ingestelde run-rate doorlopen.</p>
+        <div class="table-wrap">
+          <table class="data-table compact breakdown-table">
+            <thead>
+              <tr>
+                <th>Leverancier / regel</th>
+                <th>Categorie</th>
+                <th style="text-align:right;">Maandbasis</th>
+                ${monthsLbl.map((mm) => `<th style="text-align:right;">${escapeHtml(mm.label)}</th>`).join('')}
+                <th style="text-align:right;">Totaal prognose</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${forecast.rows.map((r) => `
+                <tr>
+                  <td><strong>${escapeHtml(r.vendor)}</strong></td>
+                  <td>${escapeHtml(r.category)}</td>
+                  <td style="text-align:right;">
+                    <strong>${fmtCurrency(r.monthlyAmount)}</strong>
+                    <span class="forecast-basis-label">${escapeHtml(r.basis)}</span>
+                  </td>
+                  ${monthsLbl.map((mm) => {
+                    const v = r.byMonth[mm.m] || 0;
+                    return `<td class="${v ? 'forecast-value' : ''}" style="text-align:right;${v ? '' : 'color:var(--text-muted);'}">${v ? fmtCurrency(v) : '—'}</td>`;
+                  }).join('')}
+                  <td style="text-align:right;"><strong>${fmtCurrency(r.total)}</strong></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr style="border-top:2px solid rgba(155,111,207,.4);">
+                <td colspan="3"><strong>Totaal prognose</strong></td>
+                ${monthsLbl.map((mm) => {
+                  const v = forecast.rows.reduce((sum, row) => sum + (row.byMonth[mm.m] || 0), 0);
+                  return `<td style="text-align:right;"><strong>${v ? fmtCurrency(v) : '—'}</strong></td>`;
+                }).join('')}
+                <td style="text-align:right;"><strong>${fmtCurrency(forecast.grandTotal)}</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : '<p class="empty-state">Geen prognose beschikbaar voor deze selectie.</p>'}
+    </section>`;
+
+  return `${actualPanel}${forecastPanel}`;
 }
 
 function renderFinance(db) {
@@ -1397,12 +1408,16 @@ function renderFinance(db) {
   const q = route.query || {};
   const filterType    = q.type || '';
   const filterPayment = q.payment || '';
+  const personSel = (q.person || 'totaal').toLowerCase();
   const curYear = new Date().getFullYear().toString();
   const yearSel = q.year || curYear;            // '2025' | '2026' | 'all' (default: huidig jaar)
   const allYears = yearSel === 'all';
   const filterYear = allYears ? '' : yearSel;
 
-  let entries = db.finance;
+  const scopedFinance = personSel === 'totaal'
+    ? db.finance
+    : db.finance.filter((entry) => String(entry.owner || '').toLowerCase().includes(personSel));
+  let entries = scopedFinance;
   if (filterType) entries = entries.filter((f) => f.type === filterType);
   if (!allYears) entries = entries.filter((f) => (f.date || '').slice(0, 4) === yearSel);
   if (filterPayment === 'gefactureerd_ontvangen') {
@@ -1412,7 +1427,8 @@ function renderFinance(db) {
   }
 
   const incomes = entries.filter((f) => f.type === 'income' && !isTripEntry(f));
-  const expenses = entries.filter((f) => f.type === 'expense' && !isTripEntry(f));
+  const rawExpenses = entries.filter((f) => f.type === 'expense' && !isTripEntry(f));
+  const expenses = actualExpenseEntries(rawExpenses);
   const incomeTotal = incomes.reduce((s, f) => s + Number(f.amount), 0);
   const expenseTotal = expenses.reduce((s, f) => s + Number(f.amount), 0);
   const ontvangen = incomes.filter((f) => f.payment_status === 'ontvangen').reduce((s, f) => s + Number(f.amount), 0);
@@ -1422,38 +1438,18 @@ function renderFinance(db) {
 
   // ===== Finance per maand: income (gefactureerd+ontvangen) + expense + netto =====
   const yearForChart = filterYear || new Date().getFullYear().toString();
-  const ys = `${yearForChart}-01-01`;
-  const ye = `${yearForChart}-12-31`;
-  const months = [];
-  for (let mi = 0; mi < 12; mi++) {
-    const d = new Date(Number(yearForChart), mi, 1);
-    months.push({
-      month: d.toISOString().slice(0, 7),
-      label: d.toLocaleDateString('nl-NL', { month: 'short' }),
-      income: 0, expense: 0, net: 0,
-    });
-  }
-  const monthsByKey = Object.fromEntries(months.map((m) => [m.month, m]));
-  for (const f of db.finance) {
-    if (isTripEntry(f)) continue;
-    if (!f.date || f.date < ys || f.date > ye) continue;
-    const amount = Number(f.amount || 0);
-    if (!amount) continue;
-    if (f.recurring === 'monthly') {
-      const fromIdx = Math.max(0, months.findIndex((m) => m.month >= f.date.slice(0, 7)));
-      for (let i = fromIdx; i < months.length; i++) {
-        if (f.type === 'income' && ['gefactureerd','ontvangen'].includes(f.payment_status)) months[i].income += amount;
-        else if (f.type === 'expense') months[i].expense += amount;
-      }
-    } else {
-      const m = monthsByKey[f.date.slice(0, 7)];
-      if (!m) continue;
-      if (f.type === 'income' && ['gefactureerd','ontvangen'].includes(f.payment_status)) m.income += amount;
-      else if (f.type === 'expense') m.expense += amount;
-    }
-  }
-  for (const m of months) m.net = m.income - m.expense;
-  const todayMonth = new Date().toISOString().slice(0, 7);
+  const monthlyModel = buildFinanceMonthlySeries(
+    scopedFinance.filter((entry) => !isTripEntry(entry)),
+    { year: yearForChart },
+  );
+  const months = monthlyModel.months.map((month) => ({
+    ...month,
+    label: fmtMonthKey(month.month, false).slice(0, 3),
+  }));
+  const todayMonth = monthlyModel.actualThroughMonth;
+  const chartPeriodNote = monthlyModel.forecastStartMonth
+    ? `T/m ${fmtMonthKey(monthlyModel.actualThroughMonth)} actual. Vanaf ${fmtMonthKey(monthlyModel.forecastStartMonth)} prognose op basis van ${fmtMonthKey(monthlyModel.baseMonth)}.`
+    : 'Alle bedragen staan in hun werkelijke transactiemaand; voor dit jaar wordt geen prognose getoond.';
   const financeSeries = [
     { key: 'net',     label: 'Netto',    color: '#D8FE56', bold: true },
     { key: 'income',  label: 'Inkomsten', color: '#FFFFFF' },
@@ -1475,6 +1471,7 @@ function renderFinance(db) {
   const activeFilters = [];
   if (filterType === 'income')  activeFilters.push('Type: Income');
   if (filterType === 'expense') activeFilters.push('Type: Expense');
+  if (personSel !== 'totaal') activeFilters.push(`Persoon: ${personSel[0].toUpperCase()}${personSel.slice(1)}`);
   if (filterPayment === 'gefactureerd_ontvangen') activeFilters.push('Status: gefactureerd + ontvangen');
   else if (filterPayment) activeFilters.push(`Status: ${filterPayment}`);
   // Jaar zit niet in activeFilters (heeft eigen knoppen); breakdown blijft gated op type/status.
@@ -1506,18 +1503,22 @@ function renderFinance(db) {
         ${linkTile('Ontvangen',     fmtCurrency(ontvangen),    'income met status ontvangen',     'success', `#/finance?type=income&payment=ontvangen&year=${yearSel}`)}
         ${linkTile('Gefactureerd',  fmtCurrency(gefactureerd), 'wacht op betaling',                'warning', `#/finance?type=income&payment=gefactureerd&year=${yearSel}`)}
         ${linkTile('Verwacht',      fmtCurrency(verwacht),     'forecast / nog te factureren',     'default', `#/finance?type=income&payment=verwacht&year=${yearSel}`)}
-        ${linkTile('Expenses totaal', fmtCurrency(expenseTotal), `${expenses.length} regel(s)`,    'warning', `#/finance?type=expense&year=${yearSel}`)}
-        ${linkTile('Netto (ontvangen - expense)', fmtCurrency(ontvangen - expenseTotal), '', ontvangen > expenseTotal ? 'success' : 'danger', `#/finance?year=${yearSel}`)}
+        ${linkTile('Expenses actual', fmtCurrency(expenseTotal), `${expenses.length} werkelijk geboekte regel(s)`, 'warning', `#/finance?type=expense&year=${yearSel}`)}
+        ${linkTile('Netto actual', fmtCurrency(ontvangen - expenseTotal), 'ontvangen - werkelijk geboekte expenses', ontvangen > expenseTotal ? 'success' : 'danger', `#/finance?year=${yearSel}`)}
       </div>
 
-      ${activeFilters.length ? renderFinanceBreakdown(entries, q) : ''}
+      ${activeFilters.length ? renderFinanceBreakdown(
+        entries.filter((entry) => !isTripEntry(entry)),
+        q,
+        { yearSel, showForecast: filterType === 'expense' },
+      ) : ''}
 
       <section class="panel forecast-panel">
         <div class="forecast-panel__head">
           <div>
             <span class="metric-label">Inkomsten · Uitgaven · Netto</span>
             <h3 style="margin:0;font-family:'Barlow';font-weight:900;color:var(--white);font-size:1.2rem;">${escapeHtml(yearForChart)} — per maand</h3>
-            <span class="muted" style="font-size:.78rem;">Inkomsten: gefactureerd + ontvangen. Recurring kosten gespreid over jaar.</span>
+            <span class="muted" style="font-size:.78rem;">${escapeHtml(chartPeriodNote)}</span>
           </div>
           <div class="chart-legend">
             ${financeSeries.map((s) => `<span><span class="legend-dot" style="background:${s.color};${s.bold ? 'height:4px;' : ''}"></span>${escapeHtml(s.label)}</span>`).join('')}
@@ -2315,4 +2316,3 @@ function renderTripDialog(db) {
       </form>
     </dialog>`;
 }
-
