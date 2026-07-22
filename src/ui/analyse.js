@@ -1,7 +1,6 @@
 // Pure rekenkern voor de Analyse-tab. Geen DOM, testbaar zoals finance-model.js.
 // 'finance' is de cache-key voor finance_entries (zie store.js).
 
-const COMMITTED = ['geaccepteerd', 'uitvoering', 'afgerond'];
 const OPEN_OFFERTE = ['offerte_verzonden'];
 const LABELS = ['inspire', 'build', 'train', 'implement', 'other'];
 
@@ -27,6 +26,12 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
   const openOffertes = (projFilter) => projects
     .filter((p) => OPEN_OFFERTE.includes(p.pipeline_status) && projFilter(p))
     .reduce((s, p) => s + Number(p.value_amount || 0), 0);
+  // Toegezegd = omzet die eraan komt: finance-regels met payment_status='verwacht'
+  // (geaccepteerde offertes én vervolgtermijnen op lopende projecten). Uit finance,
+  // niet uit projects.value_amount: zo telt een project dat nog op 'geaccepteerd'
+  // staat maar al betaald is (bv. VML) niet dubbel, en tellen Karin's
+  // vervolgtermijnen (Zjoske deel 2, AgriFood) wél mee.
+  const accepted = (projFilter) => sumByProject(projFilter, (st) => st === 'verwacht');
 
   const isPaid = (st) => st === 'ontvangen';
   const isInvoiced = (st) => st === 'gefactureerd';
@@ -36,6 +41,7 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     label,
     betaald: sumByProject((p) => p && p.service_label === label, isPaid),
     gefactureerd: sumByProject((p) => p && p.service_label === label, isInvoiced),
+    geaccepteerd: accepted((p) => p.service_label === label),
     open: openOffertes((p) => p.service_label === label),
   }));
 
@@ -45,21 +51,40 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
   const sectoren = sectorNames.map((sector) => ({
     sector,
     gerealiseerd: sumByProject((p) => sectorOf(p) === sector, (st) => isPaid(st) || isInvoiced(st)),
-    open: projects.filter((p) => OPEN_OFFERTE.includes(p.pipeline_status) && sectorOf(p) === sector)
-      .reduce((s, p) => s + Number(p.value_amount || 0), 0),
-  })).sort((a, b) => (b.gerealiseerd + b.open) - (a.gerealiseerd + a.open));
+    geaccepteerd: accepted((p) => sectorOf(p) === sector),
+    open: openOffertes((p) => sectorOf(p) === sector),
+  })).sort((a, b) => (b.gerealiseerd + b.geaccepteerd + b.open) - (a.gerealiseerd + a.geaccepteerd + a.open));
+
+  // ---- Matrix: sector × label ----
+  // Per cel twee waarden: 'vast' (betaald + gefactureerd + geaccepteerd) en 'open'
+  // (open offerte). De render telt open erbij op als de switch aan staat.
+  // 'other' valt weg als kolom (samenwerkingsgesprekken, geen dienst).
+  const MATRIX_LABELS = LABELS.filter((l) => l !== 'other');
+  const matrix = sectoren.map(({ sector }) => ({
+    sector,
+    cells: MATRIX_LABELS.map((label) => {
+      const f = (p) => p && p.service_label === label && sectorOf(p) === sector;
+      return {
+        label,
+        vast: sumByProject(f, (st) => isPaid(st) || isInvoiced(st)) + accepted(f),
+        open: openOffertes(f),
+      };
+    }),
+  }));
 
   // ---- Kanalen: lead_source én channel ----
   const bySource = (src) => ({
     source: src,
     projecten: projects.filter((p) => p.lead_source === src).length,
     gerealiseerd: sumByProject((p) => p && p.lead_source === src, (st) => isPaid(st) || isInvoiced(st)),
+    geaccepteerd: accepted((p) => p.lead_source === src),
     open: openOffertes((p) => p.lead_source === src),
   });
   const byChannel = (ch) => ({
     channel: ch,
     betaald: sumByProject((p) => p && (p.channel || 'direct') === ch, isPaid),
     gefactureerd: sumByProject((p) => p && (p.channel || 'direct') === ch, isInvoiced),
+    geaccepteerd: accepted((p) => (p.channel || 'direct') === ch),
     open: openOffertes((p) => (p.channel || 'direct') === ch),
   });
   const kanalen = {
@@ -108,6 +133,8 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     year,
     veredeling,
     sectoren,
+    matrix,
+    matrixLabels: MATRIX_LABELS,
     kanalen,
     recurring: { herhaalKlanten, herhaalTotaal, omzetTotaal, contractueelMnd },
     marge: {
@@ -175,11 +202,18 @@ export function analyseGaps(db) {
   return { labelOntbreekt, sectorOntbreekt, bedragOntbreekt, kanaalOntbreekt, dubbeleKlant };
 }
 
-export function renderAnalyse(db, { fmtCurrency, escapeHtml, year = new Date().getFullYear() } = {}) {
+export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true, year = new Date().getFullYear() } = {}) {
   const m = analyseModel(db, { year });
   const g = analyseGaps(db);
   const eur = (n) => fmtCurrency(n || 0);
   const esc = (s) => escapeHtml(String(s ?? ''));
+
+  // Totaal per balk. Betaald + gefactureerd + geaccepteerd altijd; open offertes
+  // alleen als de switch aan staat. Sectoren/lead gebruiken 'gerealiseerd' i.p.v.
+  // losse betaald/gefactureerd, dus twee varianten.
+  const openPart = (r) => (includeOpen ? Number(r.open || 0) : 0);
+  const totFull = (r) => Number(r.betaald || 0) + Number(r.gefactureerd || 0) + Number(r.geaccepteerd || 0) + openPart(r);
+  const totReal = (r) => Number(r.gerealiseerd || 0) + Number(r.geaccepteerd || 0) + openPart(r);
 
   const bar = (label, sub, value, max, extra = '') => {
     const w = max > 0 ? Math.max(0, (value / max) * 100) : 0;
@@ -191,20 +225,39 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, year = new Date().g
   };
 
   // ---- Veredeling ----
-  const maxVer = Math.max(1, ...m.veredeling.map((r) => r.betaald + r.gefactureerd + r.open));
-  const veredelingHtml = m.veredeling.filter((r) => r.betaald + r.gefactureerd + r.open > 0)
-    .map((r) => bar(r.label, null, r.betaald + r.gefactureerd + r.open, maxVer)).join('');
+  const maxVer = Math.max(1, ...m.veredeling.map(totFull));
+  const veredelingHtml = m.veredeling.filter((r) => totFull(r) > 0)
+    .map((r) => bar(r.label, null, totFull(r), maxVer)).join('');
 
   // ---- Sectoren ----
-  const maxSec = Math.max(1, ...m.sectoren.map((r) => r.gerealiseerd + r.open));
-  const sectorHtml = m.sectoren.map((r) => bar(r.sector, null, r.gerealiseerd + r.open, maxSec)).join('');
+  const maxSec = Math.max(1, ...m.sectoren.map(totReal));
+  const sectorHtml = m.sectoren.filter((r) => totReal(r) > 0)
+    .map((r) => bar(r.sector, null, totReal(r), maxSec)).join('');
+
+  // ---- Matrix: sector × label (heatmap) ----
+  const matrixRows = m.matrix
+    .map((row) => {
+      const cells = row.cells.map((c) => Number(c.vast || 0) + openPart(c));
+      return { sector: row.sector, cells, total: cells.reduce((s, v) => s + v, 0) };
+    })
+    .filter((x) => x.total > 0);
+  const matrixMax = Math.max(1, ...matrixRows.flatMap((x) => x.cells));
+  const heat = (v) => (v > 0 ? `background:rgba(155,111,207,${(0.1 + 0.5 * (v / matrixMax)).toFixed(3)})` : '');
+  const matrixHtml = `<div class="an-matrix-wrap"><table class="an-matrix">
+    <thead><tr><th>Sector</th>${m.matrixLabels.map((l) => `<th class="num">${esc(l)}</th>`).join('')}<th class="num">Totaal</th></tr></thead>
+    <tbody>${matrixRows.map((x) => `<tr>
+      <td>${esc(x.sector)}</td>
+      ${x.cells.map((v) => `<td class="num heat" style="${heat(v)}">${v > 0 ? eur(v) : '<span class="an-zero">·</span>'}</td>`).join('')}
+      <td class="num total">${eur(x.total)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
 
   // ---- Kanalen ----
-  const kanaalHtml = m.kanalen.channel.filter((r) => r.betaald + r.gefactureerd + r.open > 0)
-    .map((r) => bar(r.channel, null, r.betaald + r.gefactureerd + r.open,
-      Math.max(1, ...m.kanalen.channel.map((x) => x.betaald + x.gefactureerd + x.open)))).join('');
-  const leadHtml = m.kanalen.lead.map((r) => bar(r.source, `${r.projecten} projecten`,
-    r.gerealiseerd, Math.max(1, ...m.kanalen.lead.map((x) => x.gerealiseerd)))).join('');
+  const maxCh = Math.max(1, ...m.kanalen.channel.map(totFull));
+  const kanaalHtml = m.kanalen.channel.filter((r) => totFull(r) > 0)
+    .map((r) => bar(r.channel, null, totFull(r), maxCh)).join('');
+  const maxLead = Math.max(1, ...m.kanalen.lead.map(totReal));
+  const leadHtml = m.kanalen.lead.map((r) => bar(r.source, `${r.projecten} projecten`, totReal(r), maxLead)).join('');
 
   // ---- Recurring (feitelijk = headline; contractueel = voetnoot) ----
   const recRows = m.recurring.herhaalKlanten
@@ -261,13 +314,24 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, year = new Date().g
     <p class="eyebrow">${esc(title)}</p>${sub ? `<p class="muted">${esc(sub)}</p>` : ''}${body}
   </section>`;
 
+  const basis = 'betaald + gefactureerd + toegezegd';
+  const grondslag = includeOpen ? `${basis} + open offertes` : basis;
+
   return `<div class="page an-page">
-    <header class="page-head"><h1>Analyse</h1>
-      <p>Live uit Supabase · jaar ${year}. Gerealiseerde omzet + open pipeline.</p>
+    <header class="page-head">
+      <div class="an-head-row">
+        <h1>Analyse</h1>
+        <label class="an-toggle">
+          <input type="checkbox" data-action="toggle-open-offertes"${includeOpen ? ' checked' : ''} />
+          <span>Open offertes meetellen</span>
+        </label>
+      </div>
+      <p>Jaar ${year} · bedragen tellen ${esc(grondslag)}.</p>
     </header>
 
-    ${section('Veredeling', 'Omzet per label (betaald + gefactureerd + open offerte).', `<div class="an-bars">${veredelingHtml}</div>`)}
-    ${section('Sectoren', 'Gerealiseerd + open offerte per sector.', `<div class="an-bars">${sectorHtml}</div>`)}
+    ${section('Veredeling', `Per label: ${grondslag}.`, `<div class="an-bars">${veredelingHtml}</div>`)}
+    ${section('Sectoren', `Per sector: ${grondslag}.`, `<div class="an-bars">${sectorHtml}</div>`)}
+    ${section('Matrix — sector × label', `Welk type werk in welke sector. Kleur = omvang. ${grondslag}.`, matrixHtml)}
     ${section('Kanalen', 'Partner/factuurroute én herkomst van de lead.', `
       <p class="sub-h">Kanaal</p><div class="an-bars">${kanaalHtml}</div>
       <p class="sub-h">Herkomst</p><div class="an-bars">${leadHtml}</div>`)}

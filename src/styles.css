@@ -980,11 +980,21 @@ textarea { resize: vertical; min-height: 130px; }
 /* ================= Analyse-tab ================= */
 
 .an-page { display: flex; flex-direction: column; gap: 20px; max-width: 1080px; }
+.an-head-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .an-page .page-head h1 {
   font-weight: 900; font-size: clamp(2rem, 4vw, 3rem); line-height: .95;
   color: var(--white); margin: 0 0 6px;
 }
 .an-page .page-head p { color: var(--text-secondary); margin: 0; max-width: 62ch; }
+.an-toggle {
+  display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 8px 14px; border-radius: 999px;
+  background: var(--card-bg-strong); border: 1px solid var(--card-border);
+  font-size: .82rem; font-weight: 600; color: var(--text-secondary); user-select: none;
+}
+.an-toggle:hover { color: var(--white); border-color: var(--purple-light); }
+.an-toggle input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.an-toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .an-card {
   background: var(--card-bg-strong);
@@ -1042,6 +1052,21 @@ textarea { resize: vertical; min-height: 130px; }
 .an-table .num, .an-table th.num { text-align: right; padding-right: 0; font-variant-numeric: tabular-nums; }
 .an-inline { list-style: none; padding: 0; margin: 4px 0 0; display: flex; gap: 18px; flex-wrap: wrap; color: var(--text-secondary); font-size: .9rem; }
 .an-inline strong { color: var(--white); }
+
+/* Matrix / heatmap */
+.an-matrix-wrap { overflow-x: auto; }
+.an-matrix { border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 520px; font-size: .84rem; }
+.an-matrix th {
+  font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-muted); padding: 4px 10px; text-align: left; white-space: nowrap;
+}
+.an-matrix th.num { text-align: right; }
+.an-matrix td { padding: 8px 10px; white-space: nowrap; }
+.an-matrix td:first-child { font-weight: 600; color: var(--text-primary); }
+.an-matrix td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.an-matrix td.heat { border-radius: 6px; color: var(--white); font-weight: 600; }
+.an-matrix td.total { color: var(--white); font-weight: 700; }
+.an-matrix .an-zero { color: var(--text-muted); opacity: .5; }
 
 /* Ontbrekend-blok */
 .an-gaps .eyebrow { color: var(--text-secondary); }

@@ -138,7 +138,7 @@ function dueTone(dateStr) {
   return 'info';
 }
 
-const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null, editingCustomer: null, editingTrip: null, tripFilters: {} };
+const appState = { route: '/', filters: {}, chartHidden: new Set(), editingTask: null, editingCustomer: null, editingTrip: null, tripFilters: {}, analyseIncludeOpen: true };
 
 const OWNER_OPTIONS = ['Harmen', 'Karin', 'Danielle', 'Harmen & Karin', 'Harmen & Danielle', 'Karin & Danielle'];
 
@@ -1738,7 +1738,7 @@ function renderPage(db, route) {
   if (route.parts[0] === 'projecten' && route.parts[1]) return renderProjectDetail(db, route.parts[1]);
   if (route.parts[0] === 'klanten' && route.parts[1]) return renderKlantDetail(db, route.parts[1]);
   switch (route.path) {
-    case '/analyse':   return renderAnalyse(db, { fmtCurrency, escapeHtml });
+    case '/analyse':   return renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen: appState.analyseIncludeOpen });
     case '/acquisitie': return renderAcquisitie(db);
     case '/projecten': return renderProjectenList(db);
     case '/taken':     return renderTaken(db);
@@ -1749,6 +1749,12 @@ function renderPage(db, route) {
 }
 
 function attachEvents() {
+  // --- Analyse: open-offertes-switch (alleen presentatie, geen schrijfactie) ---
+  document.querySelector('[data-action="toggle-open-offertes"]')?.addEventListener('change', (e) => {
+    appState.analyseIncludeOpen = e.currentTarget.checked;
+    renderApp();
+  });
+
   // --- Analyse-wizard: schrijft gaten weg via de bestaande upsert-helpers ---
   document.querySelectorAll('[data-action="gap-label-ok"]').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
