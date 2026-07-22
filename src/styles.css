@@ -419,6 +419,24 @@ tr.row-clickable a { cursor: pointer; position: relative; z-index: 1; }
 .breakdown-table th,
 .breakdown-table td { white-space: nowrap; padding: 8px 10px; }
 .breakdown-table tfoot td { border-top: 0; padding-top: 12px; }
+.breakdown-forecast-panel { border-color: rgba(155,111,207,.28); }
+.breakdown-explainer {
+  margin: -2px 0 14px;
+  color: var(--text-secondary);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.forecast-basis-label {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: .68rem;
+  white-space: nowrap;
+}
+.forecast-value {
+  background: rgba(155,111,207,.08);
+  color: var(--text-primary);
+}
 
 /* Klikbare legend-knoppen */
 .legend-btn {
