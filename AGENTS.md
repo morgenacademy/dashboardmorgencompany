@@ -1,8 +1,8 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
-Houd dit bestand inhoudelijk gelijk aan `AGENTS.md`; alleen deze openingszin is tool-specifiek.
+Houd dit bestand inhoudelijk gelijk aan `CLAUDE.md`; alleen deze openingszin is tool-specifiek.
 
 ## Kern in één alinea
 
