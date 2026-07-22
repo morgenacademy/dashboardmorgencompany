@@ -72,6 +72,17 @@ assert.equal(direct.geaccepteerd, 1500);
 const netwerk = m.kanalen.lead.find((r) => r.source === 'netwerk');
 assert.equal(netwerk.geaccepteerd, 1500);
 
+// Matrix sector × label: alle drie projecten zitten in 'E-commerce / retail'
+const mRow = m.matrix.find((r) => r.sector === 'E-commerce / retail');
+const cell = (lbl) => mRow.cells.find((c) => c.label === lbl);
+assert.equal(cell('build').vast, 6184);   // p1 afgerond, betaald
+assert.equal(cell('build').open, 0);
+assert.equal(cell('implement').open, 32000); // p2 open offerte
+assert.equal(cell('implement').vast, 0);
+assert.equal(cell('train').vast, 1500);    // p3 geaccepteerd valt onder 'vast'
+// matrix bevat geen 'other'-kolom
+assert.ok(!mRow.cells.some((c) => c.label === 'other'));
+
 import { analyseGaps } from '../src/ui/analyse.js';
 
 const gapDb = {

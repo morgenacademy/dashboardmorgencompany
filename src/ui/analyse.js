@@ -55,6 +55,23 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     open: openOffertes((p) => sectorOf(p) === sector),
   })).sort((a, b) => (b.gerealiseerd + b.geaccepteerd + b.open) - (a.gerealiseerd + a.geaccepteerd + a.open));
 
+  // ---- Matrix: sector × label ----
+  // Per cel twee waarden: 'vast' (betaald + gefactureerd + geaccepteerd) en 'open'
+  // (open offerte). De render telt open erbij op als de switch aan staat.
+  // 'other' valt weg als kolom (samenwerkingsgesprekken, geen dienst).
+  const MATRIX_LABELS = LABELS.filter((l) => l !== 'other');
+  const matrix = sectoren.map(({ sector }) => ({
+    sector,
+    cells: MATRIX_LABELS.map((label) => {
+      const f = (p) => p && p.service_label === label && sectorOf(p) === sector;
+      return {
+        label,
+        vast: sumByProject(f, (st) => isPaid(st) || isInvoiced(st)) + accepted(f),
+        open: openOffertes(f),
+      };
+    }),
+  }));
+
   // ---- Kanalen: lead_source én channel ----
   const bySource = (src) => ({
     source: src,
@@ -116,6 +133,8 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     year,
     veredeling,
     sectoren,
+    matrix,
+    matrixLabels: MATRIX_LABELS,
     kanalen,
     recurring: { herhaalKlanten, herhaalTotaal, omzetTotaal, contractueelMnd },
     marge: {
@@ -215,6 +234,24 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
   const sectorHtml = m.sectoren.filter((r) => totReal(r) > 0)
     .map((r) => bar(r.sector, null, totReal(r), maxSec)).join('');
 
+  // ---- Matrix: sector × label (heatmap) ----
+  const matrixRows = m.matrix
+    .map((row) => {
+      const cells = row.cells.map((c) => Number(c.vast || 0) + openPart(c));
+      return { sector: row.sector, cells, total: cells.reduce((s, v) => s + v, 0) };
+    })
+    .filter((x) => x.total > 0);
+  const matrixMax = Math.max(1, ...matrixRows.flatMap((x) => x.cells));
+  const heat = (v) => (v > 0 ? `background:rgba(155,111,207,${(0.1 + 0.5 * (v / matrixMax)).toFixed(3)})` : '');
+  const matrixHtml = `<div class="an-matrix-wrap"><table class="an-matrix">
+    <thead><tr><th>Sector</th>${m.matrixLabels.map((l) => `<th class="num">${esc(l)}</th>`).join('')}<th class="num">Totaal</th></tr></thead>
+    <tbody>${matrixRows.map((x) => `<tr>
+      <td>${esc(x.sector)}</td>
+      ${x.cells.map((v) => `<td class="num heat" style="${heat(v)}">${v > 0 ? eur(v) : '<span class="an-zero">·</span>'}</td>`).join('')}
+      <td class="num total">${eur(x.total)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+
   // ---- Kanalen ----
   const maxCh = Math.max(1, ...m.kanalen.channel.map(totFull));
   const kanaalHtml = m.kanalen.channel.filter((r) => totFull(r) > 0)
@@ -294,6 +331,7 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
 
     ${section('Veredeling', `Per label: ${grondslag}.`, `<div class="an-bars">${veredelingHtml}</div>`)}
     ${section('Sectoren', `Per sector: ${grondslag}.`, `<div class="an-bars">${sectorHtml}</div>`)}
+    ${section('Matrix — sector × label', `Welk type werk in welke sector. Kleur = omvang. ${grondslag}.`, matrixHtml)}
     ${section('Kanalen', 'Partner/factuurroute én herkomst van de lead.', `
       <p class="sub-h">Kanaal</p><div class="an-bars">${kanaalHtml}</div>
       <p class="sub-h">Herkomst</p><div class="an-bars">${leadHtml}</div>`)}
