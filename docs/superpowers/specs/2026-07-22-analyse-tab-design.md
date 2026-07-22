@@ -69,21 +69,30 @@ sub-blokken:
    Overview-tegels *toegezegd werk* tellen en dit blok *gerealiseerd + open pipeline*
    (zie "Twee definities").
 2. **Sectoren** — `customers.industry`: gerealiseerd + open offerte.
-3. **Kanalen** — twee dimensies: herkomst (`lead_source`) én factuurroute
-   (MichielPro / Karin / Morgen direct). MichielPro wordt afgeleid uit de
-   factuuromschrijving (`ilike '%michielpro%'`); dat blijft een benadering zolang
-   er geen kanaalveld is, en dat wordt in het blok vermeld.
+3. **Kanalen** — twee dimensies: herkomst (`lead_source`) én factuurroute/partner
+   (`projects.channel`: direct / michielpro / karin). Anders dan de eerste analyse,
+   die MichielPro uit factuurteksten viste, komt dit nu uit een echt veld — zodat
+   ook open offertes via een partner meetellen (de €32.000 PharmaPartners-offerte).
 4. **Recurring** — contractueel (`pricing_model='recurring_monthly'`) versus
    feitelijke herhaalomzet (klanten met omzet in meer dan één maand). Het blok
    benoemt dat `finance_entries.recurring` onbruikbaar is zolang de sync hem op
    `one_off` hardcodeert.
-5. **Marge (nieuw)** — omzet − werkelijke kosten = netto, met margepercentage.
+5. **Marge & waar het geld heen gaat (nieuw)** — omzet − werkelijke kosten = netto,
+   met margepercentage.
    - Werkelijke kosten = alle expenses **behalve** de manual-monthly
      forecast-templates (`isExpenseForecastTemplate` uit `finance-model.js`).
-   - **Kosten zijn overhead, niet toewijsbaar.** ~94% van de kostenregels hangt aan
-     geen project, dus kosten worden niet per label of sector uitgesplitst — ze
-     staan als één marge-laag tegenover de totale omzet. Dit wordt in het blok
-     vermeld zodat niemand een label-marge verwacht.
+   - **Overhead vs projectgebonden.** Het meeste is overhead (werkstack: Anthropic,
+     Microsoft, hosting, domeinen), maar een deel is nu wél aan projecten gekoppeld
+     (Airtable/Make → SoloSolis-automation, Resend → Unbeatable PT, Google Cloud →
+     Wink&See). Het blok splitst kosten in die twee, en toont projectgebonden kosten
+     per label. Kernpatroon in de huidige data: **alle projectgebonden kosten zitten
+     op `build`**; train/inspire/implement dragen €0 directe kosten (puur tijd).
+   - **Doorlopende kost op afgerond project** — signaleren wanneer een project met
+     `pipeline_status='afgerond'` nog kosten maakt in het lopende jaar zonder
+     bijbehorende omzet in dat jaar. Voorbeeld: SoloSolis Print-Order Automation —
+     €1.633 eenmalig (2025), maar ~€578 tooling in 2026. Dit is een terugkerende kost
+     zonder terugkerende omzet; het blok markeert het als aandachtspunt (doorbelasten
+     of afslanken).
    - Kostenopbouw per categorie (Software/SaaS, AI/API-credits, …) als kleine balken.
    - Netto-per-maand: omzetlijn met een kostenlijn eronder; maanden waarin netto
      negatief was worden gemarkeerd (bij de huidige data: jan en feb).
@@ -100,7 +109,7 @@ lijkt tegen te spreken.
 
 ## Blok 2 — Ontbrekend (wizard)
 
-Een apart blok onder de analyse. Vier checks, elk met een teller en een doorloop-queue.
+Een apart blok onder de analyse. Vijf checks, elk met een teller en een doorloop-queue.
 Schrijven gaat via de bestaande `upsert`-helpers.
 
 ### Check 1 — Label ontbreekt
@@ -125,17 +134,33 @@ melding. **De tab merget niet zelf** — de duurzame fix zit in `KNOWN_CLIENTS` 
 Een merge in de database alleen komt bij de volgende sync gewoon terug (precies de
 fout van 2026-07-22). De check toont het paar en legt uit wat er in het script moet.
 
-### Nieuwe kolom `projects.label_reviewed`
+### Check 5 — Kanaal ontbreekt
+Gat = `projects.channel` leeg. Nu is partneromzet alleen uit factuurteksten te
+vissen (`ilike '%michielpro%'`), waardoor open offertes via een partner onzichtbaar
+zijn — de €32.000 PharmaPartners-offerte heeft nog geen factuur, dus geen spoor. Per
+item: keuze `direct` / `michielpro` / `karin`.
 
-`boolean not null default false`. Onderscheidt door-mens-bevestigd van
-door-sync-geraden. Sync-veilig: bestaande projecten krijgen alleen `pipeline_status`
-gepatcht (regel ~690), nieuwe inserts pakken de default.
+### Nieuwe kolommen op `projects`
+
+Beide in dezelfde migratie:
+- `label_reviewed boolean not null default false` — onderscheidt door-mens-bevestigd
+  van door-sync-geraden.
+- `channel text not null default 'direct'` met CHECK op `direct` / `michielpro` /
+  `karin` — maakt partneromzet een echte dimensie in plaats van een grep op
+  factuurtekst. De sync leidt het af uit de factuuromschrijving; de wizard vult de
+  rest.
+
+Sync-veilig: bestaande projecten krijgen alleen `pipeline_status` gepatcht (regel
+~690), nieuwe inserts pakken de defaults.
 
 ## Sync — auto-afleiden van het label
 
-De sync leidt `service_label` af uit `product_type` bij **nieuwe** inserts
-(regels ~691/693 in `sync-acquisitie.mjs`), in plaats van alles hard op `'other'`
-te zetten. Bestaande projecten worden nooit op label gepatcht, dus handmatige
+De sync leidt bij **nieuwe** inserts (regels ~691/693 in `sync-acquisitie.mjs`)
+twee velden af in plaats van vaste defaults te gebruiken:
+- `service_label` uit `product_type` (mapping hieronder), i.p.v. hard `'other'`.
+- `channel` uit de factuuromschrijving (`michielpro` als die matcht, anders `direct`).
+
+Bestaande projecten worden nooit op deze velden gepatcht, dus handmatige
 verfijningen overleven.
 
 ### Mapping
