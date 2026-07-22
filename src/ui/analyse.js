@@ -174,3 +174,119 @@ export function analyseGaps(db) {
 
   return { labelOntbreekt, sectorOntbreekt, bedragOntbreekt, kanaalOntbreekt, dubbeleKlant };
 }
+
+export function renderAnalyse(db, { fmtCurrency, escapeHtml, year = new Date().getFullYear() } = {}) {
+  const m = analyseModel(db, { year });
+  const g = analyseGaps(db);
+  const eur = (n) => fmtCurrency(n || 0);
+  const esc = (s) => escapeHtml(String(s ?? ''));
+
+  const bar = (label, sub, value, max, extra = '') => {
+    const w = max > 0 ? Math.max(0, (value / max) * 100) : 0;
+    return `<div class="an-row">
+      <div class="an-row__label"><span>${esc(label)}</span>${sub ? `<em>${esc(sub)}</em>` : ''}</div>
+      <div class="an-row__track"><span style="width:${w.toFixed(2)}%">${extra}</span></div>
+      <div class="an-row__val">${eur(value)}</div>
+    </div>`;
+  };
+
+  // ---- Veredeling ----
+  const maxVer = Math.max(1, ...m.veredeling.map((r) => r.betaald + r.gefactureerd + r.open));
+  const veredelingHtml = m.veredeling.filter((r) => r.betaald + r.gefactureerd + r.open > 0)
+    .map((r) => bar(r.label, null, r.betaald + r.gefactureerd + r.open, maxVer)).join('');
+
+  // ---- Sectoren ----
+  const maxSec = Math.max(1, ...m.sectoren.map((r) => r.gerealiseerd + r.open));
+  const sectorHtml = m.sectoren.map((r) => bar(r.sector, null, r.gerealiseerd + r.open, maxSec)).join('');
+
+  // ---- Kanalen ----
+  const kanaalHtml = m.kanalen.channel.filter((r) => r.betaald + r.gefactureerd + r.open > 0)
+    .map((r) => bar(r.channel, null, r.betaald + r.gefactureerd + r.open,
+      Math.max(1, ...m.kanalen.channel.map((x) => x.betaald + x.gefactureerd + x.open)))).join('');
+  const leadHtml = m.kanalen.lead.map((r) => bar(r.source, `${r.projecten} projecten`,
+    r.gerealiseerd, Math.max(1, ...m.kanalen.lead.map((x) => x.gerealiseerd)))).join('');
+
+  // ---- Recurring (feitelijk = headline; contractueel = voetnoot) ----
+  const recRows = m.recurring.herhaalKlanten
+    .map((k) => `<tr><td>${esc(k.klant)}</td><td class="num">${k.maanden}</td><td class="num">${eur(k.bedrag)}</td></tr>`)
+    .join('');
+  const herhaalPct = m.recurring.omzetTotaal ? (m.recurring.herhaalTotaal / m.recurring.omzetTotaal * 100) : 0;
+
+  // ---- Marge ----
+  const margeCat = m.marge.categorie
+    .map((c) => bar(c.naam, null, c.bedrag, Math.max(1, ...m.marge.categorie.map((x) => x.bedrag)))).join('');
+  const perLabelHtml = Object.entries(m.marge.perLabel)
+    .map(([lbl, v]) => `<li>${esc(lbl)}: <strong>${eur(v)}</strong></li>`).join('') || '<li>Geen projectgebonden kosten</li>';
+
+  // ---- Gap-blok ----
+  const gapCount = g.labelOntbreekt.length + g.sectorOntbreekt.length + g.bedragOntbreekt.length
+    + g.kanaalOntbreekt.length + g.dubbeleKlant.length;
+
+  const labelItems = g.labelOntbreekt.map((p) => `<li data-gap="label" data-id="${esc(p.id)}">
+    <span>${esc(p.name)}</span>
+    ${p.afgeleid ? `<em>sync raadde <strong>${esc(p.service_label)}</strong> — klopt dit?</em>` : '<em>geen label</em>'}
+    <select data-action="gap-label" data-id="${esc(p.id)}">
+      ${['inspire', 'build', 'train', 'implement', 'other'].map((l) =>
+        `<option value="${l}"${l === p.service_label ? ' selected' : ''}>${l}</option>`).join('')}
+    </select>
+    <button type="button" class="button ghost" data-action="gap-label-ok" data-id="${esc(p.id)}">${p.afgeleid ? 'klopt' : 'hoort zo'}</button>
+  </li>`).join('');
+
+  const sectorItems = g.sectorOntbreekt.map((c) => `<li>
+    <span>${esc(c.name)}</span>
+    <input list="an-sectors" data-action="gap-sector" data-id="${esc(c.id)}" placeholder="sector…" />
+  </li>`).join('');
+  const sectorDatalist = `<datalist id="an-sectors">${
+    [...new Set((db.customers || []).map((c) => c.industry).filter(Boolean))]
+      .map((s) => `<option value="${esc(s)}">`).join('')}</datalist>`;
+
+  const bedragItems = g.bedragOntbreekt.map((p) => `<li>
+    <span>${esc(p.name)}</span>
+    <input type="number" step="1" data-action="gap-bedrag" data-id="${esc(p.id)}" placeholder="bedrag €" />
+  </li>`).join('');
+
+  const kanaalItems = g.kanaalOntbreekt.map((p) => `<li>
+    <span>${esc(p.name)}</span>
+    <select data-action="gap-kanaal" data-id="${esc(p.id)}">
+      ${['direct', 'michielpro', 'karin'].map((c) => `<option value="${c}">${c}</option>`).join('')}
+    </select>
+  </li>`).join('');
+
+  const dubbelItems = g.dubbeleKlant.map((pair) => `<li>
+    <span>${esc(pair[0].name)} &nbsp;↔&nbsp; ${esc(pair[1].name)}</span>
+    <em>Lijkt dubbel. Fix hoort in <code>KNOWN_CLIENTS</code> / <code>ID_ALIAS</code> van de sync — een merge hier komt terug.</em>
+  </li>`).join('');
+
+  const section = (title, sub, body) => `<section class="card an-card">
+    <p class="eyebrow">${esc(title)}</p>${sub ? `<p class="muted">${esc(sub)}</p>` : ''}${body}
+  </section>`;
+
+  return `<div class="page an-page">
+    <header class="page-head"><h1>Analyse</h1>
+      <p>Live uit Supabase · jaar ${year}. Gerealiseerde omzet + open pipeline.</p>
+    </header>
+
+    ${section('Veredeling', 'Omzet per label (betaald + gefactureerd + open offerte).', `<div class="an-bars">${veredelingHtml}</div>`)}
+    ${section('Sectoren', 'Gerealiseerd + open offerte per sector.', `<div class="an-bars">${sectorHtml}</div>`)}
+    ${section('Kanalen', 'Partner/factuurroute én herkomst van de lead.', `
+      <p class="sub-h">Kanaal</p><div class="an-bars">${kanaalHtml}</div>
+      <p class="sub-h">Herkomst</p><div class="an-bars">${leadHtml}</div>`)}
+    ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet).`, `
+      <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>
+      <p class="muted">Contractueel model staat op ${eur(m.recurring.contractueelMnd)}/mnd — losgekoppeld van de realiteit; <code>finance_entries.recurring</code> is hardcoded <code>one_off</code>.</p>`)}
+    ${section('Marge — waar het geld heen gaat', `Omzet ${eur(m.marge.omzet)} − kosten ${eur(m.marge.kosten)} = netto ${eur(m.marge.netto)} (${m.marge.margePct.toFixed(1)}%).`, `
+      <p class="muted">Projectgebonden ${eur(m.marge.projectgebonden)} · overhead ${eur(m.marge.overhead)}. Projectkosten per label:</p>
+      <ul class="an-inline">${perLabelHtml}</ul>
+      <p class="sub-h">Kosten per categorie</p><div class="an-bars">${margeCat}</div>`)}
+
+    <section class="card an-card an-gaps">
+      <p class="eyebrow">Ontbrekend${gapCount ? ` · ${gapCount}` : ''}</p>
+      ${gapCount === 0 ? '<p class="muted">Alles compleet — geen gaten.</p>' : ''}
+      ${g.labelOntbreekt.length ? `<p class="sub-h">Label (${g.labelOntbreekt.length})</p><ul class="an-queue">${labelItems}</ul>` : ''}
+      ${g.sectorOntbreekt.length ? `<p class="sub-h">Sector (${g.sectorOntbreekt.length})</p>${sectorDatalist}<ul class="an-queue">${sectorItems}</ul>` : ''}
+      ${g.bedragOntbreekt.length ? `<p class="sub-h">Bedrag (${g.bedragOntbreekt.length})</p><ul class="an-queue">${bedragItems}</ul>` : ''}
+      ${g.kanaalOntbreekt.length ? `<p class="sub-h">Kanaal (${g.kanaalOntbreekt.length})</p><ul class="an-queue">${kanaalItems}</ul>` : ''}
+      ${g.dubbeleKlant.length ? `<p class="sub-h">Mogelijk dubbele klant (${g.dubbeleKlant.length})</p><ul class="an-queue">${dubbelItems}</ul>` : ''}
+    </section>
+  </div>`;
+}
