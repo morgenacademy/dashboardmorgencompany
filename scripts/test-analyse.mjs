@@ -11,14 +11,24 @@ const db = {
       lead_source: 'netwerk', pipeline_status: 'afgerond', value_amount: 6184 },
     { id: 'p2', customer_id: 'c1', service_label: 'implement', channel: 'michielpro',
       lead_source: 'netwerk', pipeline_status: 'offerte_verzonden', value_amount: 32000 },
-    // geaccepteerde deal: toegezegd werk, nog niet gefactureerd
+    // toegezegde deal: nog te factureren, heeft een 'verwacht'-finance-regel
     { id: 'p3', customer_id: 'c1', service_label: 'train', channel: 'direct',
       lead_source: 'netwerk', pipeline_status: 'geaccepteerd', value_amount: 1500 },
+    // VML-situatie: staat nog op 'geaccepteerd' maar is AL betaald. Mag NIET
+    // dubbel tellen (geen 'verwacht'-regel → toegezegd = 0, alleen betaald).
+    { id: 'p4', customer_id: 'c1', service_label: 'inspire', channel: 'direct',
+      lead_source: 'netwerk', pipeline_status: 'geaccepteerd', value_amount: 2000 },
   ],
   finance: [
     // omzet
     { id: 'f1', type: 'income', project_id: 'p1', amount: 6184, date: '2026-07-15',
       payment_status: 'ontvangen', description: 'SoloSolis' },
+    // toegezegd: p3 heeft een verwacht-regel (dit is de meetbron voor 'geaccepteerd')
+    { id: 'f3', type: 'income', project_id: 'p3', amount: 1500, date: '2026-08-01',
+      payment_status: 'verwacht', description: 'p3 toegezegd' },
+    // p4 is al betaald terwijl pipeline nog 'geaccepteerd' is
+    { id: 'f4', type: 'income', project_id: 'p4', amount: 2000, date: '2026-06-01',
+      payment_status: 'ontvangen', description: 'p4 betaald' },
     // kosten: projectgebonden
     { id: 'e1', type: 'expense', project_id: 'p1', amount: 100, date: '2026-03-01',
       payment_status: 'verwacht', recurring: 'one_off', source: 'bank_export',
@@ -36,10 +46,11 @@ const db = {
 
 const m = analyseModel(db, { year: 2026 });
 
-// Marge: omzet 6184 - kosten (100 + 50, NIET de 999-template) = netto 6034
-assert.equal(m.marge.omzet, 6184);
+// Marge (cash): ontvangen 6184 (p1) + 2000 (p4) = 8184; kosten 150 (NIET de
+// 999-template) → netto 8034. Toegezegd (verwacht) telt NIET in de cash-marge.
+assert.equal(m.marge.omzet, 8184);
 assert.equal(m.marge.kosten, 150);
-assert.equal(m.marge.netto, 6034);
+assert.equal(m.marge.netto, 8034);
 
 // Kosten gesplitst: projectgebonden 100 (op build), overhead 50
 assert.equal(m.marge.projectgebonden, 100);
@@ -56,12 +67,17 @@ assert.equal(implement.open, 32000);
 const mp = m.kanalen.channel.find((r) => r.channel === 'michielpro');
 assert.equal(mp.open, 32000);
 
-// Geaccepteerd: train-label heeft 1500 toegezegd (p3), los van betaald/open
+// Toegezegd = finance 'verwacht': train-label heeft 1500 (p3), los van betaald/open
 const train = m.veredeling.find((r) => r.label === 'train');
 assert.equal(train.geaccepteerd, 1500);
 assert.equal(train.open, 0);
-// build heeft geen geaccepteerd (p1 is afgerond)
+// build heeft geen toegezegd (p1 is afgerond, geen verwacht-regel)
 assert.equal(build.geaccepteerd, 0);
+// VML-fix: p4 staat op 'geaccepteerd' maar is al betaald → telt NIET dubbel.
+// inspire heeft 2000 betaald en 0 toegezegd (geen verwacht-regel).
+const inspire = m.veredeling.find((r) => r.label === 'inspire');
+assert.equal(inspire.betaald, 2000);
+assert.equal(inspire.geaccepteerd, 0);
 // sector Retail: geaccepteerd 1500 (p3), sector-kanaal-lijn heeft het ook
 const retail = m.sectoren.find((r) => r.sector === 'E-commerce / retail');
 assert.equal(retail.geaccepteerd, 1500);

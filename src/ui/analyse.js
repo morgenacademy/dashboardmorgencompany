@@ -2,7 +2,6 @@
 // 'finance' is de cache-key voor finance_entries (zie store.js).
 
 const OPEN_OFFERTE = ['offerte_verzonden'];
-const ACCEPTED = ['geaccepteerd'];
 const LABELS = ['inspire', 'build', 'train', 'implement', 'other'];
 
 function isForecastTemplate(e) {
@@ -27,11 +26,12 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
   const openOffertes = (projFilter) => projects
     .filter((p) => OPEN_OFFERTE.includes(p.pipeline_status) && projFilter(p))
     .reduce((s, p) => s + Number(p.value_amount || 0), 0);
-  // Geaccepteerd = toegezegd werk (offerte geaccepteerd, nog niet gefactureerd).
-  // Symmetrisch met open offertes: beide uit projects.value_amount.
-  const accepted = (projFilter) => projects
-    .filter((p) => ACCEPTED.includes(p.pipeline_status) && projFilter(p))
-    .reduce((s, p) => s + Number(p.value_amount || 0), 0);
+  // Toegezegd = omzet die eraan komt: finance-regels met payment_status='verwacht'
+  // (geaccepteerde offertes én vervolgtermijnen op lopende projecten). Uit finance,
+  // niet uit projects.value_amount: zo telt een project dat nog op 'geaccepteerd'
+  // staat maar al betaald is (bv. VML) niet dubbel, en tellen Karin's
+  // vervolgtermijnen (Zjoske deel 2, AgriFood) wél mee.
+  const accepted = (projFilter) => sumByProject(projFilter, (st) => st === 'verwacht');
 
   const isPaid = (st) => st === 'ontvangen';
   const isInvoiced = (st) => st === 'gefactureerd';
@@ -314,7 +314,7 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
     <p class="eyebrow">${esc(title)}</p>${sub ? `<p class="muted">${esc(sub)}</p>` : ''}${body}
   </section>`;
 
-  const basis = 'betaald + gefactureerd + geaccepteerd';
+  const basis = 'betaald + gefactureerd + toegezegd';
   const grondslag = includeOpen ? `${basis} + open offertes` : basis;
 
   return `<div class="page an-page">
