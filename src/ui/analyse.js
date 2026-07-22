@@ -249,7 +249,7 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
   const matrixMax = Math.max(1, ...matrixRows.flatMap((x) => x.cells));
   const heat = (v) => (v > 0 ? `background:rgba(155,111,207,${(0.1 + 0.5 * (v / matrixMax)).toFixed(3)})` : '');
   const matrixHtml = `<div class="an-matrix-wrap"><table class="an-matrix">
-    <thead><tr><th>Sector</th>${m.matrixLabels.map((l) => `<th class="num">${esc(l)}</th>`).join('')}<th class="num">Totaal</th></tr></thead>
+    <thead><tr><th>Sector</th>${m.matrixLabels.map((l) => `<th class="num heat-h">${esc(l)}</th>`).join('')}<th class="num">Totaal</th></tr></thead>
     <tbody>${matrixRows.map((x) => `<tr>
       <td>${esc(x.sector)}</td>
       ${x.cells.map((v) => `<td class="num heat" style="${heat(v)}">${v > 0 ? eur(v) : '<span class="an-zero">·</span>'}</td>`).join('')}
