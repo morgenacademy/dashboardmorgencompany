@@ -1,0 +1,7 @@
+# Echte bestanden (cockpit index.html, /src/*, dashboard.html) worden eerst geserveerd.
+/api/ai-news            /.netlify/functions/ai-news             200
+/api/netlify-sites      /.netlify/functions/netlify-sites       200
+/api/supabase-projects  /.netlify/functions/supabase-projects   200
+/dashboard        /dashboard.html   200
+/dashboard/*      /dashboard.html   200
+/*                /index.html       200

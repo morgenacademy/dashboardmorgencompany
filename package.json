@@ -1,0 +1,11 @@
+{
+  "name": "companydashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "lint": "node --check src/main.js && node --check src/app.js && node --check src/data/store.js && node --check src/ui/charts.js && node --check server.js"
+  }
+}

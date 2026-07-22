@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>Portal</title>
+  <defs>
+    <linearGradient id="neon" x1="7" y1="9" x2="60" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff4ff3" />
+      <stop offset="0.52" stop-color="#a45cff" />
+      <stop offset="1" stop-color="#42d8ff" />
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation=".8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  <g stroke="url(#neon)" stroke-width="2.8" opacity=".33" filter="url(#glow)">
+    <path d="M12 55V14a5 5 0 0 1 5-5h31a5 5 0 0 1 5 5v42" />
+    <path d="M20 51V17h31v36" />
+    <path d="M51 18l10-5v46l-10-6" />
+    <path d="M27 42a7 7 0 0 1 14 0" />
+    <path d="M39 42a7 7 0 0 1 14 0" />
+  </g>
+  <g stroke="url(#neon)" stroke-width="1.35" vector-effect="non-scaling-stroke">
+    <path d="M12 55V14a5 5 0 0 1 5-5h31a5 5 0 0 1 5 5v42" />
+    <path d="M20 51V17h31v36" />
+    <path d="M51 18l10-5v46l-10-6" />
+    <path d="M27 42a7 7 0 0 1 14 0" />
+    <path d="M39 42a7 7 0 0 1 14 0" />
+    <circle cx="34" cy="31" r="4.7" />
+    <circle cx="46" cy="31" r="4.7" />
+    <path d="M12 55v7" />
+    <path d="M21 55v7" />
+    <circle cx="12" cy="55" r="3" />
+    <circle cx="21" cy="62" r="3" />
+    <path d="M12 62h9" />
+  </g>
+  <circle cx="58" cy="38" r="3.2" stroke="#D8FE56" stroke-width="1.45" vector-effect="non-scaling-stroke" />
+</svg>
