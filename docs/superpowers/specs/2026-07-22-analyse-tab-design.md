@@ -73,10 +73,12 @@ sub-blokken:
    (`projects.channel`: direct / michielpro / karin). Anders dan de eerste analyse,
    die MichielPro uit factuurteksten viste, komt dit nu uit een echt veld — zodat
    ook open offertes via een partner meetellen (de €32.000 PharmaPartners-offerte).
-4. **Recurring** — contractueel (`pricing_model='recurring_monthly'`) versus
-   feitelijke herhaalomzet (klanten met omzet in meer dan één maand). Het blok
-   benoemt dat `finance_entries.recurring` onbruikbaar is zolang de sync hem op
-   `one_off` hardcodeert.
+4. **Recurring** — headline is de **feitelijke herhaalomzet**: klanten met omzet in
+   meer dan één maand (nu ~€10.805, 44,6% van de omzet), met de lijst terugkerende
+   klanten. Het contractuele model (`pricing_model='recurring_monthly'`, nu €4,95/mnd)
+   krijgt géén groot getal — het is een klein bijzinnetje dat het model losstaat van
+   de realiteit. `finance_entries.recurring` (hardcoded `one_off`) wordt in diezelfde
+   voetnoot genoemd, niet als eigen blok.
 5. **Marge & waar het geld heen gaat (nieuw)** — omzet − werkelijke kosten = netto,
    met margepercentage.
    - Werkelijke kosten = alle expenses **behalve** de manual-monthly
