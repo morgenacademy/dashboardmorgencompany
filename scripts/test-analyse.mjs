@@ -53,4 +53,58 @@ assert.equal(implement.open, 32000);
 const mp = m.kanalen.channel.find((r) => r.channel === 'michielpro');
 assert.equal(mp.open, 32000);
 
+import { analyseGaps } from '../src/ui/analyse.js';
+
+const gapDb = {
+  customers: [
+    { id: 'c1', name: 'Vermeulen', industry: '' },
+    { id: 'c2', name: 'Trappenfabriek Vermeulen B.V.', industry: 'Industrie' },
+    { id: 'c3', name: 'Gamma', industry: 'Overheid' },
+  ],
+  projects: [
+    // label ontbreekt: other + niet reviewed
+    { id: 'p1', customer_id: 'c3', name: 'Geen label', service_label: 'other',
+      label_reviewed: false, channel: 'direct', pipeline_status: 'geaccepteerd', value_amount: 500 },
+    // afgeleid maar onbevestigd: train + niet reviewed
+    { id: 'p2', customer_id: 'c3', name: 'Geraden train', service_label: 'train',
+      label_reviewed: false, channel: 'direct', pipeline_status: 'offerte_verzonden', value_amount: 800 },
+    // bevestigd: telt niet als gat
+    { id: 'p3', customer_id: 'c3', name: 'Bevestigd', service_label: 'build',
+      label_reviewed: true, channel: 'direct', pipeline_status: 'afgerond', value_amount: 900 },
+    // bedrag ontbreekt: offerte met 0
+    { id: 'p4', customer_id: 'c3', name: 'Geen bedrag', service_label: 'build',
+      label_reviewed: true, channel: 'direct', pipeline_status: 'offerte_verzonden', value_amount: 0 },
+    // kanaal ontbreekt: channel leeg
+    { id: 'p5', customer_id: 'c3', name: 'Geen kanaal', service_label: 'build',
+      label_reviewed: true, channel: '', pipeline_status: 'afgerond', value_amount: 100 },
+  ],
+  finance: [],
+};
+
+const g = analyseGaps(gapDb);
+
+// label: p1 (geen) + p2 (geraden), niet p3
+assert.equal(g.labelOntbreekt.length, 2);
+assert.ok(g.labelOntbreekt.some((x) => x.id === 'p1' && x.afgeleid === false));
+assert.ok(g.labelOntbreekt.some((x) => x.id === 'p2' && x.afgeleid === true));
+
+// sector: alleen c1 (leeg)
+assert.equal(g.sectorOntbreekt.length, 1);
+assert.equal(g.sectorOntbreekt[0].id, 'c1');
+
+// bedrag: alleen p4
+assert.equal(g.bedragOntbreekt.length, 1);
+assert.equal(g.bedragOntbreekt[0].id, 'p4');
+
+// kanaal: alleen p5
+assert.equal(g.kanaalOntbreekt.length, 1);
+assert.equal(g.kanaalOntbreekt[0].id, 'p5');
+
+// dubbele klant: Vermeulen ~ Trappenfabriek Vermeulen B.V.
+assert.equal(g.dubbeleKlant.length, 1);
+assert.deepEqual(
+  g.dubbeleKlant[0].map((c) => c.id).sort(),
+  ['c1', 'c2'],
+);
+
 console.log('analyse-model: OK');

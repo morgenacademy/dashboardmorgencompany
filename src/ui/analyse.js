@@ -123,3 +123,54 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     },
   };
 }
+
+const OPEN_STAGES = ['offerte_verzonden', 'geaccepteerd'];
+
+// Genormaliseerde naam voor de dubbele-klant-heuristiek.
+function normName(name) {
+  return String(name || '').toLowerCase()
+    .replace(/\b(b\.?v\.?|bv|the|de|het)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+export function analyseGaps(db) {
+  const projects = db.projects || [];
+  const customers = db.customers || [];
+
+  // 1 + afgeleid: service_label niet bevestigd. 'other' = geen label, anders = geraden.
+  const labelOntbreekt = projects
+    .filter((p) => p.label_reviewed === false)
+    .map((p) => ({ id: p.id, name: p.name, service_label: p.service_label,
+      afgeleid: p.service_label !== 'other', value_amount: Number(p.value_amount || 0) }))
+    .sort((a, b) => b.value_amount - a.value_amount);
+
+  // 2: sector leeg
+  const sectorOntbreekt = customers
+    .filter((c) => !c.industry)
+    .map((c) => ({ id: c.id, name: c.name }));
+
+  // 3: offerte met bedrag 0
+  const bedragOntbreekt = projects
+    .filter((p) => OPEN_STAGES.includes(p.pipeline_status) && Number(p.value_amount || 0) === 0)
+    .map((p) => ({ id: p.id, name: p.name }));
+
+  // 4: kanaal leeg (default 'direct' zou gezet moeten zijn; leeg = data-anomalie)
+  const kanaalOntbreekt = projects
+    .filter((p) => !p.channel)
+    .map((p) => ({ id: p.id, name: p.name }));
+
+  // 5: dubbele klant — genormaliseerde naam A substring van B (alleen signaleren)
+  const dubbeleKlant = [];
+  for (let i = 0; i < customers.length; i++) {
+    for (let j = i + 1; j < customers.length; j++) {
+      const a = normName(customers[i].name);
+      const b = normName(customers[j].name);
+      if (!a || !b) continue;
+      if (a === b || a.includes(b) || b.includes(a)) {
+        dubbeleKlant.push([customers[i], customers[j]]);
+      }
+    }
+  }
+
+  return { labelOntbreekt, sectorOntbreekt, bedragOntbreekt, kanaalOntbreekt, dubbeleKlant };
+}
