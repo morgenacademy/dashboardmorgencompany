@@ -128,6 +128,8 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     kostenCategorie[cat] = (kostenCategorie[cat] || 0) + Number(e.amount || 0);
   }
   const betaaldOmzet = paidBy((f) => isPaid(f.payment_status));
+  // Verwachte omzet = alles waar je op rekent: betaald + gefactureerd + toegezegd.
+  const verwachtOmzet = paidBy((f) => isPaid(f.payment_status) || isInvoiced(f.payment_status) || f.payment_status === 'verwacht');
 
   return {
     year,
@@ -142,6 +144,9 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
       kosten,
       netto: betaaldOmzet - kosten,
       margePct: betaaldOmzet ? (1 - kosten / betaaldOmzet) * 100 : 0,
+      verwachtOmzet,
+      verwachtNetto: verwachtOmzet - kosten,
+      verwachtPct: verwachtOmzet ? (1 - kosten / verwachtOmzet) * 100 : 0,
       projectgebonden,
       overhead: kosten - projectgebonden,
       perLabel,
@@ -338,8 +343,20 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
     ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet).`, `
       <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>
       <p class="muted">Contractueel model staat op ${eur(m.recurring.contractueelMnd)}/mnd — losgekoppeld van de realiteit; <code>finance_entries.recurring</code> is hardcoded <code>one_off</code>.</p>`)}
-    ${section('Marge — waar het geld heen gaat', `Cash: ontvangen ${eur(m.marge.omzet)} − uitgaven ${eur(m.marge.kosten)} = netto ${eur(m.marge.netto)} (${m.marge.margePct.toFixed(1)}%). Ontvangen = binnengekomen omzet, niet de gefactureerde/open pipeline hierboven.`, `
-      <p class="muted">Projectgebonden ${eur(m.marge.projectgebonden)} · overhead ${eur(m.marge.overhead)}. Projectkosten per label:</p>
+    ${section('Marge — waar het geld heen gaat', `Twee lezingen: wat er nu écht binnen is (cash) en waar je op rekent (verwacht). Uitgaven ${eur(m.marge.kosten)} zijn werkelijk YTD.`, `
+      <div class="an-marge-duo">
+        <div class="an-marge-tile">
+          <span class="an-marge-label">Cash — netto nu</span>
+          <span class="an-marge-val">${eur(m.marge.netto)}</span>
+          <span class="an-marge-sub">${m.marge.margePct.toFixed(1)}% · ontvangen ${eur(m.marge.omzet)} − uitgaven ${eur(m.marge.kosten)}</span>
+        </div>
+        <div class="an-marge-tile an-marge-tile--soft">
+          <span class="an-marge-label">Verwacht — waar je op rekent</span>
+          <span class="an-marge-val">${eur(m.marge.verwachtNetto)}</span>
+          <span class="an-marge-sub">${m.marge.verwachtPct.toFixed(1)}% · omzet ${eur(m.marge.verwachtOmzet)} (betaald+gefactureerd+toegezegd) − kosten YTD</span>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:1rem">Projectgebonden ${eur(m.marge.projectgebonden)} · overhead ${eur(m.marge.overhead)}. Projectkosten per label:</p>
       <ul class="an-inline">${perLabelHtml}</ul>
       <p class="sub-h">Kosten per categorie</p><div class="an-bars">${margeCat}</div>`)}
 
