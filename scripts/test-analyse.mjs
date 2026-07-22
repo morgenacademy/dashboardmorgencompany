@@ -11,6 +11,9 @@ const db = {
       lead_source: 'netwerk', pipeline_status: 'afgerond', value_amount: 6184 },
     { id: 'p2', customer_id: 'c1', service_label: 'implement', channel: 'michielpro',
       lead_source: 'netwerk', pipeline_status: 'offerte_verzonden', value_amount: 32000 },
+    // geaccepteerde deal: toegezegd werk, nog niet gefactureerd
+    { id: 'p3', customer_id: 'c1', service_label: 'train', channel: 'direct',
+      lead_source: 'netwerk', pipeline_status: 'geaccepteerd', value_amount: 1500 },
   ],
   finance: [
     // omzet
@@ -52,6 +55,22 @@ assert.equal(implement.open, 32000);
 // Kanaal: michielpro heeft 32000 open (de onzichtbare offerte is nu zichtbaar)
 const mp = m.kanalen.channel.find((r) => r.channel === 'michielpro');
 assert.equal(mp.open, 32000);
+
+// Geaccepteerd: train-label heeft 1500 toegezegd (p3), los van betaald/open
+const train = m.veredeling.find((r) => r.label === 'train');
+assert.equal(train.geaccepteerd, 1500);
+assert.equal(train.open, 0);
+// build heeft geen geaccepteerd (p1 is afgerond)
+assert.equal(build.geaccepteerd, 0);
+// sector Retail: geaccepteerd 1500 (p3), sector-kanaal-lijn heeft het ook
+const retail = m.sectoren.find((r) => r.sector === 'E-commerce / retail');
+assert.equal(retail.geaccepteerd, 1500);
+// kanaal direct: geaccepteerd 1500
+const direct = m.kanalen.channel.find((r) => r.channel === 'direct');
+assert.equal(direct.geaccepteerd, 1500);
+// lead netwerk: geaccepteerd 1500
+const netwerk = m.kanalen.lead.find((r) => r.source === 'netwerk');
+assert.equal(netwerk.geaccepteerd, 1500);
 
 import { analyseGaps } from '../src/ui/analyse.js';
 

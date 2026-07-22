@@ -980,11 +980,21 @@ textarea { resize: vertical; min-height: 130px; }
 /* ================= Analyse-tab ================= */
 
 .an-page { display: flex; flex-direction: column; gap: 20px; max-width: 1080px; }
+.an-head-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .an-page .page-head h1 {
   font-weight: 900; font-size: clamp(2rem, 4vw, 3rem); line-height: .95;
   color: var(--white); margin: 0 0 6px;
 }
 .an-page .page-head p { color: var(--text-secondary); margin: 0; max-width: 62ch; }
+.an-toggle {
+  display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 8px 14px; border-radius: 999px;
+  background: var(--card-bg-strong); border: 1px solid var(--card-border);
+  font-size: .82rem; font-weight: 600; color: var(--text-secondary); user-select: none;
+}
+.an-toggle:hover { color: var(--white); border-color: var(--purple-light); }
+.an-toggle input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.an-toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .an-card {
   background: var(--card-bg-strong);
