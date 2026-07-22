@@ -519,6 +519,9 @@ function buildRecords() {
       product_type: guessProductType(c.hay),
       forecast_amount: c.amount || 0,
       date: c.date,
+      // hay = haystack (mapnaam + bestandsnaam + notitie). Nodig voor deriveChannel:
+      // de michielpro-marker zit hier, niet in `name` (dat is de eindklant).
+      hay: c.hay,
       sourceFile: `${c.statusDir}/${c.sub}/${c.file}`,
     };
     // Overrides toepassen (op de acq-basis-id, vóór alias).

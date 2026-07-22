@@ -1765,8 +1765,10 @@ function attachEvents() {
     input.addEventListener('change', async (e) => {
       const customer = getDatabase().customers.find((c) => c.id === e.currentTarget.dataset.id);
       if (!customer) return;
-      customer.industry = e.currentTarget.value.trim();
-      if (customer.industry) await upsertCustomer(customer);
+      const sector = e.currentTarget.value.trim();
+      if (!sector) return; // leeg veld: cache niet vervuilen, niets schrijven
+      customer.industry = sector;
+      await upsertCustomer(customer);
     });
   });
   document.querySelectorAll('[data-action="gap-bedrag"]').forEach((input) => {

@@ -274,7 +274,7 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, year = new Date().g
     ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet).`, `
       <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>
       <p class="muted">Contractueel model staat op ${eur(m.recurring.contractueelMnd)}/mnd — losgekoppeld van de realiteit; <code>finance_entries.recurring</code> is hardcoded <code>one_off</code>.</p>`)}
-    ${section('Marge — waar het geld heen gaat', `Omzet ${eur(m.marge.omzet)} − kosten ${eur(m.marge.kosten)} = netto ${eur(m.marge.netto)} (${m.marge.margePct.toFixed(1)}%).`, `
+    ${section('Marge — waar het geld heen gaat', `Cash: ontvangen ${eur(m.marge.omzet)} − uitgaven ${eur(m.marge.kosten)} = netto ${eur(m.marge.netto)} (${m.marge.margePct.toFixed(1)}%). Ontvangen = binnengekomen omzet, niet de gefactureerde/open pipeline hierboven.`, `
       <p class="muted">Projectgebonden ${eur(m.marge.projectgebonden)} · overhead ${eur(m.marge.overhead)}. Projectkosten per label:</p>
       <ul class="an-inline">${perLabelHtml}</ul>
       <p class="sub-h">Kosten per categorie</p><div class="an-bars">${margeCat}</div>`)}
