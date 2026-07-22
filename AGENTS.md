@@ -18,6 +18,8 @@ node scripts/sync-acquisitie.mjs           # live sync naar Supabase (breekt af 
 node scripts/sync-acquisitie.mjs --force   # sync ook met onleesbare PDF's (bewust)
 node scripts/test-sync-unreadable.mjs      # regressietest voor de sync (fixture, geen Drive nodig)
 node scripts/test-finance-model.mjs        # regressietest voor actuals versus prognose (geen netwerk nodig)
+node scripts/test-label-model.mjs          # regressietest voor label/kanaal-afleiding (geen netwerk nodig)
+node scripts/test-analyse.mjs              # regressietest voor de Analyse-tab: model + gaps (geen netwerk nodig)
 ```
 
 Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test`-script). Gebruik de twee gerichte regressietests hierboven. De README beschrijft bovendien een **verouderde** architectuur (LocalStorage, `src/domain/`, `seed.js`, `products`/`deliveries`/`reviews`) die niet meer bestaat — **vertrouw de code, niet de README.**
@@ -37,7 +39,7 @@ Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test
 - `server.js` serveert alles statisch op `:4173` en spiegelt de Netlify-functions lokaal (`/api/*`). Netlify publiceert de root (`publish = "."`) zonder build; `_redirects` + `netlify.toml` regelen routing en een wachtwoord-edge-function (`gate.js`, actief als `COCKPIT_PASSWORD` gezet is).
 
 ### De SPA (`src/app.js`)
-Eén groot bestand. Hash-router (`#/`, `#/acquisitie`, `#/projecten`, `#/taken`, `#/finance`, `#/klanten`). Rendering is **template-literals**: `renderApp()` bouwt een HTML-string en zet die in `#app`, daarna `attachEvents()`. Geen framework, geen virtual DOM — na elke mutatie volledig herrenderen. `main.js` (8 regels) doet alleen bootstrap: `renderApp()` bij DOMContentLoaded + `loadAll()`.
+Eén groot bestand. Hash-router (`#/`, `#/analyse`, `#/acquisitie`, `#/projecten`, `#/taken`, `#/finance`, `#/klanten`). Rendering is **template-literals**: `renderApp()` bouwt een HTML-string en zet die in `#app`, daarna `attachEvents()`. Geen framework, geen virtual DOM — na elke mutatie volledig herrenderen. `main.js` (8 regels) doet alleen bootstrap: `renderApp()` bij DOMContentLoaded + `loadAll()`.
 
 ### Datalaag (`src/data/store.js`)
 Praat met Supabase via **lokaal gevendorde** `lib/vendor/supabase-js.js` (bewust géén runtime-import van esm.sh — dat brak het dashboard). Stateless: geen login, geen localStorage. Vier tabellen:
@@ -59,6 +61,14 @@ Actuals en prognoses zijn bewust gescheiden en gebruiken op Overview en Finance 
 - De kostenprognose begint na de lopende (mogelijk onvolledige) maand en gebruikt voor bankregels het leverancierstotaal van de laatste volledig afgesloten maand.
 - Een handmatige maandregel (`source === 'manual'`, `recurring === 'monthly'`) is een expliciete run-rate: wel prognose, geen actual.
 - Pas rekenregels aan in `src/finance-model.js` en dek ze af in `scripts/test-finance-model.mjs`; bouw geen tweede Finance-logica in `app.js`.
+
+### Analyse-tab (`src/ui/analyse.js`, route `#/analyse`)
+Zelfstandige module met drie **pure** exports (geen DOM): `analyseModel(db, {year})` (veredeling per label, sectoren, kanalen, recurring, marge), `analyseGaps(db)` (vijf datakwaliteit-checks) en `renderAnalyse(db, {fmtCurrency, escapeHtml})`. `app.js` levert alleen nav-item, route en de wizard-events. Dek rekenregels af in `scripts/test-analyse.mjs`; bouw geen tweede analyse-logica in `app.js`.
+
+- **Twee omzetdefinities, bewust.** De Overview-per-label-tegels tellen *toegezegd* werk (`actual_amount + forecast_amount` over committed projecten). De Analyse-tab telt *gerealiseerd + open pipeline* uit Finance. De Marge-kaart is **cash**: ontvangen − werkelijke uitgaven (kosten staan op `payment_status='verwacht'` maar zijn echte `bank_export`-transacties, dus niet op status filteren). Drie verschillende bases — de UI labelt ze expliciet; laat ze niet stilletjes samenvloeien.
+- **Twee kolommen op `projects`.** `label_reviewed` (bool, default false) scheidt door-mens-bevestigd van door-sync-geraden. `channel` (`direct`/`michielpro`/`karin`, default `direct`) maakt partneromzet een echte dimensie i.p.v. een grep op factuurtekst. Beide sync-veilig: de sync patcht bij bestaande projecten alleen `pipeline_status`.
+- **Sync leidt af, niet raden.** `src/label-model.js` (`deriveServiceLabel`/`deriveChannel`, gedeeld door sync én app) zet bij nieuwe projecten een afgeleid label + kanaal, met `label_reviewed=false` — zo komt een geraden label (bv. `training`→`train`, terwijl het `inspire` had gemoeten) als "klopt dit?" langs de wizard i.p.v. stil te verdwijnen. `deriveChannel` leest de **haystack** (mapnaam), niet de projectnaam: die bevat de eindklant, niet 'michielpro'.
+- De **dubbele-klant-check signaleert alleen** — de duurzame fix zit in `KNOWN_CLIENTS`/`ID_ALIAS` van de sync, niet in een merge in het dashboard (die komt bij de volgende sync terug).
 
 ### Funnel-vocabulaire (cross-cutting, zit in `app.js`)
 Ruwe `projects.pipeline_status` ≠ de buckets die de UI toont. `acquisitieBuckets(db)` vertaalt alles naar één gedeelde funnel: **Lead · Pending · Geaccepteerd · Gefactureerd · Betaald · Afgewezen**. Cruciaal:
