@@ -1053,6 +1053,20 @@ textarea { resize: vertical; min-height: 130px; }
 .an-inline { list-style: none; padding: 0; margin: 4px 0 0; display: flex; gap: 18px; flex-wrap: wrap; color: var(--text-secondary); font-size: .9rem; }
 .an-inline strong { color: var(--white); }
 
+/* Marge-duo: cash vs verwacht */
+.an-marge-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 4px 0 0; }
+@media (max-width: 620px) { .an-marge-duo { grid-template-columns: 1fr; } }
+.an-marge-tile {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 16px 18px; border-radius: 16px;
+  background: var(--card-bg); border: 1px solid var(--card-border);
+}
+.an-marge-tile--soft { background: var(--purple-pale); }
+.an-marge-label { font-size: .64rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); }
+.an-marge-val { font-weight: 900; font-size: 1.9rem; line-height: 1; color: var(--accent); letter-spacing: -.01em; }
+.an-marge-tile--soft .an-marge-val { color: var(--purple-light); }
+.an-marge-sub { font-size: .78rem; color: var(--text-secondary); }
+
 /* Matrix / heatmap */
 .an-matrix-wrap { overflow-x: auto; }
 .an-matrix { border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 520px; font-size: .84rem; }
@@ -1064,6 +1078,7 @@ textarea { resize: vertical; min-height: 130px; }
 .an-matrix td { padding: 8px 10px; white-space: nowrap; }
 .an-matrix td:first-child { font-weight: 600; color: var(--text-primary); }
 .an-matrix td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.an-matrix th.heat-h, .an-matrix td.heat { text-align: center; }
 .an-matrix td.heat { border-radius: 6px; color: var(--white); font-weight: 600; }
 .an-matrix td.total { color: var(--white); font-weight: 700; }
 .an-matrix .an-zero { color: var(--text-muted); opacity: .5; }

@@ -51,6 +51,10 @@ const m = analyseModel(db, { year: 2026 });
 assert.equal(m.marge.omzet, 8184);
 assert.equal(m.marge.kosten, 150);
 assert.equal(m.marge.netto, 8034);
+// Verwachte marge: volle omzet = ontvangen 8184 + gefactureerd 0 + toegezegd 1500
+// (p3 verwacht) = 9684; verwacht netto = 9684 − 150 = 9534.
+assert.equal(m.marge.verwachtOmzet, 9684);
+assert.equal(m.marge.verwachtNetto, 9534);
 
 // Kosten gesplitst: projectgebonden 100 (op build), overhead 50
 assert.equal(m.marge.projectgebonden, 100);

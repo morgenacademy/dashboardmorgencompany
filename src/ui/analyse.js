@@ -108,9 +108,6 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     .sort((a, b) => b.bedrag - a.bedrag);
   const herhaalTotaal = herhaalKlanten.reduce((s, k) => s + k.bedrag, 0);
   const omzetTotaal = paidBy((f) => isPaid(f.payment_status) || isInvoiced(f.payment_status));
-  const contractueelMnd = projects
-    .filter((p) => p.pricing_model === 'recurring_monthly')
-    .reduce((s, p) => s + Number(p.value_amount || 0), 0);
 
   // ---- Marge: omzet - werkelijke kosten ----
   const expenses = finance.filter((f) => f.type === 'expense' && !isForecastTemplate(f) && inYear(f.date, year));
@@ -128,6 +125,8 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     kostenCategorie[cat] = (kostenCategorie[cat] || 0) + Number(e.amount || 0);
   }
   const betaaldOmzet = paidBy((f) => isPaid(f.payment_status));
+  // Verwachte omzet = alles waar je op rekent: betaald + gefactureerd + toegezegd.
+  const verwachtOmzet = paidBy((f) => isPaid(f.payment_status) || isInvoiced(f.payment_status) || f.payment_status === 'verwacht');
 
   return {
     year,
@@ -136,12 +135,15 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     matrix,
     matrixLabels: MATRIX_LABELS,
     kanalen,
-    recurring: { herhaalKlanten, herhaalTotaal, omzetTotaal, contractueelMnd },
+    recurring: { herhaalKlanten, herhaalTotaal, omzetTotaal },
     marge: {
       omzet: betaaldOmzet,
       kosten,
       netto: betaaldOmzet - kosten,
       margePct: betaaldOmzet ? (1 - kosten / betaaldOmzet) * 100 : 0,
+      verwachtOmzet,
+      verwachtNetto: verwachtOmzet - kosten,
+      verwachtPct: verwachtOmzet ? (1 - kosten / verwachtOmzet) * 100 : 0,
       projectgebonden,
       overhead: kosten - projectgebonden,
       perLabel,
@@ -244,7 +246,7 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
   const matrixMax = Math.max(1, ...matrixRows.flatMap((x) => x.cells));
   const heat = (v) => (v > 0 ? `background:rgba(155,111,207,${(0.1 + 0.5 * (v / matrixMax)).toFixed(3)})` : '');
   const matrixHtml = `<div class="an-matrix-wrap"><table class="an-matrix">
-    <thead><tr><th>Sector</th>${m.matrixLabels.map((l) => `<th class="num">${esc(l)}</th>`).join('')}<th class="num">Totaal</th></tr></thead>
+    <thead><tr><th>Sector</th>${m.matrixLabels.map((l) => `<th class="num heat-h">${esc(l)}</th>`).join('')}<th class="num">Totaal</th></tr></thead>
     <tbody>${matrixRows.map((x) => `<tr>
       <td>${esc(x.sector)}</td>
       ${x.cells.map((v) => `<td class="num heat" style="${heat(v)}">${v > 0 ? eur(v) : '<span class="an-zero">·</span>'}</td>`).join('')}
@@ -335,11 +337,22 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
     ${section('Kanalen', 'Partner/factuurroute én herkomst van de lead.', `
       <p class="sub-h">Kanaal</p><div class="an-bars">${kanaalHtml}</div>
       <p class="sub-h">Herkomst</p><div class="an-bars">${leadHtml}</div>`)}
-    ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet).`, `
-      <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>
-      <p class="muted">Contractueel model staat op ${eur(m.recurring.contractueelMnd)}/mnd — losgekoppeld van de realiteit; <code>finance_entries.recurring</code> is hardcoded <code>one_off</code>.</p>`)}
-    ${section('Marge — waar het geld heen gaat', `Cash: ontvangen ${eur(m.marge.omzet)} − uitgaven ${eur(m.marge.kosten)} = netto ${eur(m.marge.netto)} (${m.marge.margePct.toFixed(1)}%). Ontvangen = binnengekomen omzet, niet de gefactureerde/open pipeline hierboven.`, `
-      <p class="muted">Projectgebonden ${eur(m.marge.projectgebonden)} · overhead ${eur(m.marge.overhead)}. Projectkosten per label:</p>
+    ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet) — klanten die in meer dan één maand factureerden.`, `
+      <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>`)}
+    ${section('Marge — waar het geld heen gaat', `Twee lezingen: wat er nu écht binnen is (cash) en waar je op rekent (verwacht). Uitgaven ${eur(m.marge.kosten)} zijn werkelijk YTD.`, `
+      <div class="an-marge-duo">
+        <div class="an-marge-tile">
+          <span class="an-marge-label">Cash — netto nu</span>
+          <span class="an-marge-val">${eur(m.marge.netto)}</span>
+          <span class="an-marge-sub">${m.marge.margePct.toFixed(1)}% · ontvangen ${eur(m.marge.omzet)} − uitgaven ${eur(m.marge.kosten)}</span>
+        </div>
+        <div class="an-marge-tile an-marge-tile--soft">
+          <span class="an-marge-label">Verwacht — waar je op rekent</span>
+          <span class="an-marge-val">${eur(m.marge.verwachtNetto)}</span>
+          <span class="an-marge-sub">${m.marge.verwachtPct.toFixed(1)}% · omzet ${eur(m.marge.verwachtOmzet)} (betaald+gefactureerd+toegezegd) − kosten YTD</span>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:1rem">Projectgebonden ${eur(m.marge.projectgebonden)} · overhead ${eur(m.marge.overhead)}. Projectkosten per label:</p>
       <ul class="an-inline">${perLabelHtml}</ul>
       <p class="sub-h">Kosten per categorie</p><div class="an-bars">${margeCat}</div>`)}
 
