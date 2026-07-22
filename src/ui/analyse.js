@@ -108,9 +108,6 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     .sort((a, b) => b.bedrag - a.bedrag);
   const herhaalTotaal = herhaalKlanten.reduce((s, k) => s + k.bedrag, 0);
   const omzetTotaal = paidBy((f) => isPaid(f.payment_status) || isInvoiced(f.payment_status));
-  const contractueelMnd = projects
-    .filter((p) => p.pricing_model === 'recurring_monthly')
-    .reduce((s, p) => s + Number(p.value_amount || 0), 0);
 
   // ---- Marge: omzet - werkelijke kosten ----
   const expenses = finance.filter((f) => f.type === 'expense' && !isForecastTemplate(f) && inYear(f.date, year));
@@ -138,7 +135,7 @@ export function analyseModel(db, { year = new Date().getFullYear() } = {}) {
     matrix,
     matrixLabels: MATRIX_LABELS,
     kanalen,
-    recurring: { herhaalKlanten, herhaalTotaal, omzetTotaal, contractueelMnd },
+    recurring: { herhaalKlanten, herhaalTotaal, omzetTotaal },
     marge: {
       omzet: betaaldOmzet,
       kosten,
@@ -340,9 +337,8 @@ export function renderAnalyse(db, { fmtCurrency, escapeHtml, includeOpen = true,
     ${section('Kanalen', 'Partner/factuurroute én herkomst van de lead.', `
       <p class="sub-h">Kanaal</p><div class="an-bars">${kanaalHtml}</div>
       <p class="sub-h">Herkomst</p><div class="an-bars">${leadHtml}</div>`)}
-    ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet).`, `
-      <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>
-      <p class="muted">Contractueel model staat op ${eur(m.recurring.contractueelMnd)}/mnd — losgekoppeld van de realiteit; <code>finance_entries.recurring</code> is hardcoded <code>one_off</code>.</p>`)}
+    ${section('Recurring', `Feitelijke herhaalomzet: ${eur(m.recurring.herhaalTotaal)} (${herhaalPct.toFixed(1)}% van de omzet) — klanten die in meer dan één maand factureerden.`, `
+      <table class="an-table"><thead><tr><th>Klant</th><th class="num">Maanden</th><th class="num">${year}</th></tr></thead><tbody>${recRows}</tbody></table>`)}
     ${section('Marge — waar het geld heen gaat', `Twee lezingen: wat er nu écht binnen is (cash) en waar je op rekent (verwacht). Uitgaven ${eur(m.marge.kosten)} zijn werkelijk YTD.`, `
       <div class="an-marge-duo">
         <div class="an-marge-tile">
