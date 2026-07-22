@@ -5,6 +5,7 @@ import {
   upsertCustomer, upsertFinance, deleteFinance, nextId,
 } from './data/store.js';
 import { lineChart, barChart, dualLineChart, teamMonthlyChart } from './ui/charts.js';
+import { renderAnalyse } from './ui/analyse.js';
 import {
   actualExpenseEntries,
   buildActualVendorRows,
@@ -1716,6 +1717,7 @@ function renderKlantDetail(db, customerId) {
 function renderNavigation(route) {
   const items = [
     ['/', 'Overview'],
+    ['/analyse', 'Analyse'],
     ['/acquisitie', 'Acquisitie'],
     ['/projecten', 'Projecten'],
     ['/taken', 'Taken'],
@@ -1736,6 +1738,7 @@ function renderPage(db, route) {
   if (route.parts[0] === 'projecten' && route.parts[1]) return renderProjectDetail(db, route.parts[1]);
   if (route.parts[0] === 'klanten' && route.parts[1]) return renderKlantDetail(db, route.parts[1]);
   switch (route.path) {
+    case '/analyse':   return renderAnalyse(db, { fmtCurrency, escapeHtml });
     case '/acquisitie': return renderAcquisitie(db);
     case '/projecten': return renderProjectenList(db);
     case '/taken':     return renderTaken(db);
