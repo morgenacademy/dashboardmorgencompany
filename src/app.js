@@ -1749,6 +1749,45 @@ function renderPage(db, route) {
 }
 
 function attachEvents() {
+  // --- Analyse-wizard: schrijft gaten weg via de bestaande upsert-helpers ---
+  document.querySelectorAll('[data-action="gap-label-ok"]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.id;
+      const sel = document.querySelector(`select[data-action="gap-label"][data-id="${id}"]`);
+      const project = getDatabase().projects.find((p) => p.id === id);
+      if (!project) return;
+      if (sel) project.service_label = sel.value;
+      project.label_reviewed = true;
+      await upsertProject(project);
+    });
+  });
+  document.querySelectorAll('[data-action="gap-sector"]').forEach((input) => {
+    input.addEventListener('change', async (e) => {
+      const customer = getDatabase().customers.find((c) => c.id === e.currentTarget.dataset.id);
+      if (!customer) return;
+      customer.industry = e.currentTarget.value.trim();
+      if (customer.industry) await upsertCustomer(customer);
+    });
+  });
+  document.querySelectorAll('[data-action="gap-bedrag"]').forEach((input) => {
+    input.addEventListener('change', async (e) => {
+      const project = getDatabase().projects.find((p) => p.id === e.currentTarget.dataset.id);
+      if (!project) return;
+      const val = Number(e.currentTarget.value);
+      if (!Number.isFinite(val) || val <= 0) return;
+      project.value_amount = val;
+      await upsertProject(project);
+    });
+  });
+  document.querySelectorAll('[data-action="gap-kanaal"]').forEach((sel) => {
+    sel.addEventListener('change', async (e) => {
+      const project = getDatabase().projects.find((p) => p.id === e.currentTarget.dataset.id);
+      if (!project) return;
+      project.channel = e.currentTarget.value;
+      await upsertProject(project);
+    });
+  });
+
   document.getElementById('project-filter')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
