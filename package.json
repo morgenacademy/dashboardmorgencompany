@@ -6,6 +6,6 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "lint": "node --check src/main.js && node --check src/app.js && node --check src/finance-model.js && node --check src/data/store.js && node --check src/ui/charts.js && node --check server.js"
+    "lint": "node --check src/main.js && node --check src/app.js && node --check src/finance-model.js && node --check src/label-model.js && node --check src/data/store.js && node --check src/ui/charts.js && node --check src/ui/analyse.js && node --check server.js"
   }
 }
