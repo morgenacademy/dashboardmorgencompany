@@ -4,6 +4,12 @@
 **Branch:** cockpit
 **Status:** ontwerp goedgekeurd, klaar voor implementatieplan
 
+> **Update september 2026:** de acquisitie-map is verhuisd van Google Drive naar Teams
+> (SharePoint, lokaal gesynct via OneDrive) en heet daar `Marketing en Sales/Acquisitie`.
+> Waar dit document "Google Drive" schrijft, lees "de acquisitie-map". Het actuele pad
+> staat in `scripts/sync-acquisitie.mjs` (`ACQ_DIR_TEAMS`). De rest van het ontwerp
+> verandert niet: mapstructuur, statusmappen en dataflow zijn identiek.
+
 ## Probleem
 
 Het dashboard heeft de offerte-pipeline al (Supabase `projects`), maar wordt niet
