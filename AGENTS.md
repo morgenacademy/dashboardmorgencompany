@@ -22,11 +22,13 @@ node scripts/test-label-model.mjs          # regressietest voor label/kanaal-afl
 node scripts/test-analyse.mjs              # regressietest voor de Analyse-tab: model + gaps (geen netwerk nodig)
 ```
 
-Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test`-script). Gebruik de twee gerichte regressietests hierboven. De README beschrijft bovendien een **verouderde** architectuur (LocalStorage, `src/domain/`, `seed.js`, `products`/`deliveries`/`reviews`) die niet meer bestaat — **vertrouw de code, niet de README.**
+Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test`-script). Gebruik de vier gerichte regressietests hierboven. De README beschrijft bovendien een **verouderde** architectuur (LocalStorage, `src/domain/`, `seed.js`, `products`/`deliveries`/`reviews`) die niet meer bestaat — **vertrouw de code, niet de README.**
+
+**Een UI-wijziging verifiëren.** Voor de rekenmodellen zijn er regressietests, voor de twee pagina's niet. Wat hier werkt: `npm start`, dan headless Chromium (Playwright) tegen `http://localhost:4173`, `/api/*` stubben met een vast antwoord, en de tegels echt aanklikken. Zo controleer je volgorde, flyout-inhoud, hrefs en JS-fouten zonder Netlify of Supabase nodig te hebben.
 
 ## Operationele regels (belangrijk)
 
-- **Werk op branch `cockpit`. Merge NIET naar `main`.** Elke merge naar main triggert een betaalde Netlify-deploy. De gebruiker merget zelf wanneer die er klaar voor is. Commit + push naar cockpit is prima.
+- **Merge zelf NIET naar `main`.** Elke merge naar main triggert een betaalde Netlify-deploy van morgendashboard.netlify.app. Werk op een feature-branch (`cockpit`, of de `claude/*`-branch die je is toegewezen), commit en push daar, en laat het mergen aan de gebruiker: die doet dat via een PR wanneer hij er klaar voor is. Let op dat `cockpit` en `main` uit elkaar kunnen lopen; controleer bij het starten welke van de twee jouw vertrekpunt is.
 - **Data zit in Supabase, niet in de repo.** Handmatige datacorrecties gaan via de Supabase MCP (`execute_sql`, project ref `jeqvjtnxgxpjviwhjmzr`), niet via codewijzigingen. RLS staat anon lezen/schrijven toe.
 - **De acquisitie-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (offerte → geaccepteerd → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen.
 - **Draai de sync altijd eerst met `--dry` en lees de uitvoer** voor je live gaat. Hij raakt echt geld: hij schrijft finance-regels en kan seed-regels vervangen. Bij twijfel over een bedrag: pinnen in de overrides, niet gokken.
@@ -37,6 +39,15 @@ Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test
 - `index.html` — de "cockpit" landingspagina, volledig self-contained (~54 KB, eigen inline CSS/JS).
 - `dashboard.html` — laadt `src/main.js` → de SPA. Bereikbaar op `/dashboard`.
 - `server.js` serveert alles statisch op `:4173` en spiegelt de Netlify-functions lokaal (`/api/*`). Netlify publiceert de root (`publish = "."`) zonder build; `_redirects` + `netlify.toml` regelen routing en een wachtwoord-edge-function (`gate.js`, actief als `COCKPIT_PASSWORD` gezet is).
+
+### De cockpit-pagina (`index.html`)
+Alles zit inline in dat ene bestand. Drie structuren sturen de tegelgrid aan:
+
+- **`LINKS`** is de bron van de grid: een lijst groepen (`Dev & deploy`, `Apps`, `Beheer`, `Automatisering`) met per item `label`, `sub`, `href` en `icon`, plus optioneel `ext` (opent in een nieuw tabblad) of `flyout` (rendert een knop in plaats van een link).
+- **`FLY`** is het register van flyouts: per sleutel een `title`, een `all`-link, een `fetch()` en een `row()` die één resultaat naar HTML rendert. De sleutel matcht `data-flyout` uit het `LINKS`-item. Opgehaalde data blijft per paginabezoek in `cfg.cache` staan, dus een tweede klik doet geen nieuw verzoek.
+- **`ICONS`** bevat lijn-iconen als fallback. `iconBox()` probeert eerst `/assets/icons/icon-<icon>.svg` en valt bij een laadfout terug op het inline icoon, zodat een nieuwe tegel altijd iets toont.
+
+Haal alles wat in een attribuut belandt door `escapeHtml()`, ook `href`: de Teams-deeplink heeft een `&` in de querystring en belandt via `innerHTML` in de DOM.
 
 ### De SPA (`src/app.js`)
 Eén groot bestand. Hash-router (`#/`, `#/analyse`, `#/acquisitie`, `#/projecten`, `#/taken`, `#/finance`, `#/klanten`). Rendering is **template-literals**: `renderApp()` bouwt een HTML-string en zet die in `#app`, daarna `attachEvents()`. Geen framework, geen virtual DOM — na elke mutatie volledig herrenderen. `main.js` (8 regels) doet alleen bootstrap: `renderApp()` bij DOMContentLoaded + `loadAll()`.
@@ -81,6 +92,17 @@ Wijzig je één van deze plekken, wijzig ze allemaal via de gedeelde helpers —
 
 ### Serverless (`lib/`, `netlify/`)
 `lib/integrations.mjs` (AI-nieuws, Netlify-sites, Supabase-projects, SharePoint) wordt gedeeld door `server.js` (lokaal) én `netlify/functions/*.mjs` (productie), zodat `/api/*` in beide werkt.
+
+**Een `/api/*`-integratie toevoegen raakt vijf plekken.** Sla je er één over, dan werkt het lokaal wel en op Netlify niet, of andersom:
+1. `lib/integrations.mjs`: exporteer een functie die `{ ok: true, items }` of `{ ok: false, error }` teruggeeft. Nooit gooien, en schrijf een leesbare `error`: die komt letterlijk in de flyout te staan.
+2. `netlify/functions/<naam>.mjs`: dunne wrapper met `statusCode`, JSON-header en `Cache-Control`.
+3. `_redirects`: `/api/<naam>` naar `/.netlify/functions/<naam>`, status 200.
+4. `server.js`: dezelfde functie in `apiRoutes`, zodat `npm start` zich identiek gedraagt.
+5. `index.html`: een `LINKS`-item met `flyout: '<sleutel>'` plus de bijbehorende `FLY`-config (en een icoon).
+
+Zet nieuwe gedeelde modules ook in het `lint`-script: `node --check` is de enige syntaxcontrole die deze repo heeft.
+
+**Env-vars en cache (kostte een keer een ronde debuggen).** Netlify-functions zien een gewijzigde env-var pas na een nieuwe deploy, dus zet 'm en trigger daarna een rebuild van dezelfde commit. Daarbovenop cachet het CDN `/api/*` zolang de `Cache-Control` van de functie zegt (5 minuten bij SharePoint), en onthoudt de flyout zijn resultaat per paginabezoek. Test dus rechtstreeks met een cache-buster, `/api/<naam>?t=1`, voor je concludeert dat de code stuk is.
 
 **SharePoint (`/api/sharepoint`).** Microsoft Graph via de client-credentials-flow: een Azure-app-registratie met application permission `Sites.Read.All` plus admin consent. Zet `MS_CLIENT_ID` en `MS_CLIENT_SECRET` als env-vars in Netlify (nooit in de client). Optioneel: `MS_TENANT_ID` (default is de Morgen-tenant, die ook in de Teams-deeplink staat), `SHAREPOINT_HOST` (default `morgencompany.sharepoint.com`) en `SHAREPOINT_SITES` (komma-lijst met sitepaden; leeg = alle sites die de app mag zien). Ontbreken de twee verplichte vars, dan geeft het endpoint netjes `ok:false` met uitleg en blijft de tegel gewoon doorlinken naar SharePoint. De flyout haalt per site de top-level items van de standaard documentbibliotheek en sorteert zelf op `lastModifiedDateTime`: `$orderby` levert op sommige bibliotheken een 501 op.
 
