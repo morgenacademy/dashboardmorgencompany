@@ -1,13 +1,14 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { getAiNews, getNetlifySites, getSupabaseProjects } from './lib/integrations.mjs';
+import { getAiNews, getNetlifySites, getSupabaseProjects, getSharepointFiles } from './lib/integrations.mjs';
 
 // Lokale tegenhanger van de Netlify Functions, zodat /api/* ook met `npm start` werkt.
 const apiRoutes = {
   '/api/ai-news': getAiNews,
   '/api/netlify-sites': getNetlifySites,
   '/api/supabase-projects': getSupabaseProjects,
+  '/api/sharepoint': getSharepointFiles,
 };
 
 const host = process.env.HOST || '0.0.0.0';
