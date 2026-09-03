@@ -360,6 +360,8 @@
         supabase: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
         n8n: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h3M14 8.5l3 2M14 15.5l3-2"/>',
         airtable: '<path d="M12 3 3 7l9 4 9-4-9-4z"/><path d="M3 7v6l9 4 9-4V7"/>',
+        sharepoint: '<circle cx="7.8" cy="7.2" r="4.7"/><circle cx="17.6" cy="11" r="3.7"/><circle cx="11.2" cy="18" r="3.4"/>',
+        teams: '<rect x="2" y="6" width="14" height="14" rx="2.6"/><path d="M5.4 10.2h7.2M9 10.2v6.6"/><circle cx="19.2" cy="8.6" r="3"/>',
         chevron: '<path d="m6 9 6 6 6-6"/>',
         eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
         eyeoff: '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>',
@@ -403,6 +405,8 @@
         ]},
         { group: 'Apps', items: [
           { label: 'Dashboard', sub: 'Omzet · projecten · taken', href: '/dashboard', icon: 'dashboard' },
+          { label: 'SharePoint', sub: 'Recente bestanden', flyout: 'sharepoint', href: 'https://morgencompany.sharepoint.com/_layouts/15/sharepoint.aspx', icon: 'sharepoint' },
+          { label: 'Teams', sub: 'Morgen intern', href: 'https://teams.microsoft.com/l/channel/19%3AqZKsV76EXdlDmZg2tuoAxZdLVWP3FZaw_zJ33mTwbi81%40thread.tacv2/Morgen%20intern?groupId=c1f84d13-8ce3-42dd-86d3-a2bf90de52d4&tenantId=a7e3d42c-1c30-4558-91d7-89e3ed906fdc', icon: 'teams', ext: true },
           { label: 'Interne workflow', sub: 'Git & samenwerken', href: 'https://morgenacademy.github.io/internal-workflow/', icon: 'workflow', ext: true },
           { label: 'Open projects', sub: 'Openstaand · extra handjes', href: 'https://morgenacademy.github.io/open-projects/', icon: 'github', ext: true },
           { label: 'Website', sub: 'morgencompany.com', href: 'https://morgencompany.com', img: '/assets/icons/favicon-company.svg', icon: 'website', ext: true },
@@ -416,10 +420,6 @@
         { group: 'Automatisering', items: [
           { label: 'n8n · Morgen', sub: 'Onze workflows', href: 'https://n8n.morgenacademy.nl/home/workflows', icon: 'n8n', ext: true },
           { label: 'n8n · Trainees', sub: 'Training-workflows', href: 'https://training-n8n.morgenacademy.nl/home/workflows', icon: 'n8n', ext: true },
-        ]},
-        { group: 'Tools', items: [
-          { label: 'Google Drive', sub: 'Bestanden', href: 'https://drive.google.com', icon: 'drive', ext: true },
-          { label: 'Slack', sub: 'Team chat', href: 'https://app.slack.com', icon: 'slack', ext: true },
         ]},
       ];
       function linkCard(it) {
@@ -436,7 +436,7 @@
         const inner = iconBox(it)
           + `<span class="ck-link__body"><strong>${escapeHtml(it.label)}</strong><span class="ck-link__sub">${escapeHtml(it.sub)}</span></span>`;
         const tgt = it.ext ? ' target="_blank" rel="noopener"' : '';
-        return `<a class="ck-link" href="${it.href}"${tgt}>${inner}<span class="ck-link__arrow">${icon(it.ext ? 'ext' : 'go')}</span></a>`;
+        return `<a class="ck-link" href="${escapeHtml(it.href)}"${tgt}>${inner}<span class="ck-link__arrow">${icon(it.ext ? 'ext' : 'go')}</span></a>`;
       }
       byId('links').innerHTML = LINKS.map((g) => `
         <div class="ck-group">
@@ -696,6 +696,13 @@
           cache: null,
           fetch: () => fetchApi('/api/supabase-projects'),
           row: (p) => `<a class="ck-repo" href="${escapeHtml(p.url || '#')}" target="_blank" rel="noopener"><strong>${escapeHtml(p.name)}</strong>${p.region ? `<span class="desc">${escapeHtml(p.region)}</span>` : ''}<span class="meta">${p.status ? `<span>${escapeHtml(p.status)}</span>` : ''}</span></a>`,
+        },
+        sharepoint: {
+          title: 'Recente bestanden',
+          all: 'https://morgencompany.sharepoint.com/_layouts/15/sharepoint.aspx',
+          cache: null,
+          fetch: () => fetchApi('/api/sharepoint'),
+          row: (f) => `<a class="ck-repo" href="${escapeHtml(f.url || 'https://morgencompany.sharepoint.com')}" target="_blank" rel="noopener"><strong>${escapeHtml(f.name)}</strong>${f.site ? `<span class="desc">${escapeHtml(f.site)}</span>` : ''}<span class="meta">${f.kind === 'folder' ? '<span>map</span>' : f.by ? `<span>${escapeHtml(f.by)}</span>` : ''}<span>${relTime(f.modified)}</span></span></a>`,
         },
       };
       const flyoutEl = byId('flyout');
