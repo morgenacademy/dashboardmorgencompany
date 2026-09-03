@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Acquisitie-map → dashboard (Supabase) sync.
-// De Drive-map is leidend; dit script leest 'm en schrijft naar Supabase.
+// De acquisitie-map is leidend; dit script leest 'm en schrijft naar Supabase.
 // Zie docs/superpowers/specs/2026-06-16-acquisitie-dashboard-sync-design.md
 //
 // Gebruik:
@@ -10,9 +10,10 @@
 //
 // Vereist: `pdftotext` (brew install poppler) voor bedrag-extractie.
 //
-// Let op: Google Drive File Stream houdt bestanden soms als placeholder (metadata
-// aanwezig, inhoud niet lokaal). Zulke PDF's worden overgeslagen, nooit geraden, en
-// een live-run breekt af tenzij --force. Zie pdfText().
+// Let op: cloud-mappen houden bestanden soms als placeholder (metadata aanwezig,
+// inhoud niet lokaal) — OneDrive "Files On-Demand" net zo goed als Google Drive File
+// Stream. Zulke PDF's worden overgeslagen, nooit geraden, en een live-run breekt af
+// tenzij --force. Zie pdfText().
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
@@ -23,7 +24,14 @@ import { deriveServiceLabel, deriveChannel } from '../src/label-model.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ---------- Config ----------
-const ACQ_DIR = process.env.ACQ_DIR || '/Users/harmen/Library/CloudStorage/GoogleDrive-harmenvanheist@gmail.com/.shortcut-targets-by-id/1Vw5smxKTXbsiD2UZrq2pGtgM71Fa57aP/Morgen Academy/Acquisitie';
+// De acquisitie-map staat sinds september 2026 in Teams (SharePoint), lokaal gesynct
+// via OneDrive. De oude Google Drive-map is bewust GEEN fallback: die blijft als
+// achtergebleven kopie op de schijf staan en er stilzwijgend uit syncen zou statussen
+// terugdraaien naar hoe ze vóór de verhuizing stonden. Bestaat de nieuwe map niet, dan
+// stopt de sync met een uitleg (assertSource) i.p.v. iets ouds te lezen.
+const ACQ_DIR_TEAMS = '/Users/harmen/Library/CloudStorage/OneDrive-Morgen/Shortcuts/Morgen - Documents/Marketing en Sales/Acquisitie';
+const ACQ_DIR_LEGACY_DRIVE = '/Users/harmen/Library/CloudStorage/GoogleDrive-harmenvanheist@gmail.com/.shortcut-targets-by-id/1Vw5smxKTXbsiD2UZrq2pGtgM71Fa57aP/Morgen Academy/Acquisitie';
+const ACQ_DIR = process.env.ACQ_DIR || ACQ_DIR_TEAMS;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://jeqvjtnxgxpjviwhjmzr.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_uO70RUh9JTZZEykA_mUyzw_hyMNfi7-';
 const DRY = process.argv.includes('--dry');
@@ -109,7 +117,7 @@ function paymentForFolder(name) {
 }
 
 // pdftotext klaagt op stderr maar geeft exit 0 als een bestand geen echte PDF is
-// (Drive-placeholder: metadata aanwezig, inhoud niet lokaal). Lege output zou dan
+// (cloud-placeholder: metadata aanwezig, inhoud niet lokaal). Lege output zou dan
 // stilletjes als "offerte zonder bedrag" doorgaan → verzonnen projecten.
 const PDF_BROKEN_RE = /may not be a pdf file|couldn't find trailer dictionary|couldn't read xref/i;
 
@@ -122,14 +130,14 @@ const _pdfCache = new Map();
 function pdfText(file) {
   if (_pdfCache.has(file)) return _pdfCache.get(file);
   // Timeout: een lokale PDF parseert in milliseconden. Blijft pdftotext hangen, dan
-  // wacht het op een Drive-download die er niet komt → als onleesbaar behandelen.
+  // wacht het op een cloud-download die er niet komt → als onleesbaar behandelen.
   const res = spawnSync('pdftotext', ['-layout', file, '-'], {
     encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 8_000,
   });
   let text = null, reason = '';
-  if (res.error) reason = res.error.code === 'ETIMEDOUT' ? 'timeout bij lezen (Drive niet lokaal?)' : res.error.message;
+  if (res.error) reason = res.error.code === 'ETIMEDOUT' ? 'timeout bij lezen (bestand niet lokaal?)' : res.error.message;
   else if (res.status !== 0) reason = `pdftotext exit ${res.status}`;
-  else if (PDF_BROKEN_RE.test(res.stderr || '')) reason = 'geen geldige PDF-inhoud (Drive niet lokaal?)';
+  else if (PDF_BROKEN_RE.test(res.stderr || '')) reason = 'geen geldige PDF-inhoud (bestand niet lokaal?)';
   else if (!/[A-Za-z0-9]/.test(res.stdout || '')) reason = 'geen tekst in PDF';
   else text = res.stdout;
 
@@ -548,9 +556,35 @@ async function sb(path, { method = 'GET', body, prefer } = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+// Stopt met uitleg als de bron ontbreekt of geen statusmappen bevat. Zonder dit geeft
+// readdirSync een kale ENOENT, of loopt een run met 0 records "geslaagd" door terwijl
+// het pad simpelweg een niveau verkeerd staat.
+function assertSource() {
+  if (!existsSync(ACQ_DIR)) {
+    console.error(`\n✖ Acquisitie-map niet gevonden:\n   ${ACQ_DIR}`);
+    if (!process.env.ACQ_DIR && existsSync(ACQ_DIR_LEGACY_DRIVE)) {
+      console.error(`\n  De oude Google Drive-map staat er nog wél:\n   ${ACQ_DIR_LEGACY_DRIVE}`);
+      console.error(`  Die wordt bewust NIET gebruikt: hij is achtergebleven bij de verhuizing naar Teams,`);
+      console.error(`  dus syncen zou statussen terugdraaien. Tóch nodig? ACQ_DIR="…" node scripts/sync-acquisitie.mjs`);
+    } else {
+      console.error(`\n  Staat de map ergens anders? Geef 'm mee: ACQ_DIR="/pad/naar/Acquisitie" node scripts/sync-acquisitie.mjs`);
+    }
+    console.error(`  Nog niet lokaal gesynct? In Finder rechtsklik de map → "Altijd behouden op dit apparaat".\n`);
+    process.exit(1);
+  }
+  const statusDirs = listDirs(ACQ_DIR).filter((n) => STATUS_BY_PREFIX.some(([prefix]) => n.startsWith(prefix)));
+  if (!statusDirs.length) {
+    console.error(`\n✖ Geen statusmappen (1. … 5.) gevonden in:\n   ${ACQ_DIR}`);
+    console.error(`  Gevonden mappen: ${listDirs(ACQ_DIR).join(', ') || '(geen)'}`);
+    console.error(`  Wijst ACQ_DIR een niveau te hoog of te laag?\n`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   console.log(`\n📂 Acquisitie-sync ${DRY ? '(DRY RUN — schrijft niets)' : ''}`);
   console.log(`   bron: ${ACQ_DIR}\n`);
+  assertSource();
 
   const { records, flags } = buildRecords();
 
@@ -559,7 +593,7 @@ async function main() {
   if (!DRY && UNREADABLE.length && !FORCE) {
     console.error(`\n✖ Live-run afgebroken: ${UNREADABLE.length} bestand(en) onleesbaar, de bron is incompleet.`);
     for (const u of UNREADABLE) console.error(`   - ${relative(ACQ_DIR, u.file)} — ${u.reason}`);
-    console.error(`\n  Maak ze lokaal beschikbaar (Google Drive → rechtsklik map → "Download now") en draai opnieuw.`);
+    console.error(`\n  Maak ze lokaal beschikbaar (Finder → rechtsklik map → "Altijd behouden op dit apparaat") en draai opnieuw.`);
     console.error(`  Of forceer bewust: node scripts/sync-acquisitie.mjs --force\n`);
     process.exitCode = 1;
     return;
@@ -683,7 +717,7 @@ async function main() {
   // Onleesbare bestanden = incomplete bron. Niet stilzwijgend doorschrijven.
   if (UNREADABLE.length && !FORCE) {
     console.error(`\n✖ Live-run afgebroken: ${UNREADABLE.length} bestand(en) onleesbaar (zie ⚑ hierboven).`);
-    console.error(`  Maak ze lokaal beschikbaar (Google Drive → rechtsklik map → "Download now") en draai opnieuw.`);
+    console.error(`  Maak ze lokaal beschikbaar (Finder → rechtsklik map → "Altijd behouden op dit apparaat") en draai opnieuw.`);
     console.error(`  Weet je zeker dat het veilig is? Dan: node scripts/sync-acquisitie.mjs --force\n`);
     process.exitCode = 1;
     return;

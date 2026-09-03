@@ -6,7 +6,7 @@ Houd dit bestand inhoudelijk gelijk aan `AGENTS.md`; alleen deze openingszin is 
 
 ## Kern in één alinea
 
-Buildless vanilla-JS webapp, **geen dependencies, geen bundler, geen buildstap**. Je bewerkt `src/*` en ververst de browser. De data leeft niet in de repo maar in **Supabase**; de app is een spiegel daarvan. De acquisitie-pipeline heeft een tweede bron van waarheid: een **Google Drive-map** die via een script naar Supabase wordt gesynct.
+Buildless vanilla-JS webapp, **geen dependencies, geen bundler, geen buildstap**. Je bewerkt `src/*` en ververst de browser. De data leeft niet in de repo maar in **Supabase**; de app is een spiegel daarvan. De acquisitie-pipeline heeft een tweede bron van waarheid: een **Teams-map** (SharePoint, lokaal gesynct via OneDrive) die via een script naar Supabase wordt gesynct.
 
 ## Commando's
 
@@ -30,7 +30,7 @@ Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test
 
 - **Merge zelf NIET naar `main`.** Elke merge naar main triggert een betaalde Netlify-deploy van morgendashboard.netlify.app. Werk op een feature-branch (`cockpit`, of de `claude/*`-branch die je is toegewezen), commit en push daar, en laat het mergen aan de gebruiker: die doet dat via een PR wanneer hij er klaar voor is. Let op dat `cockpit` en `main` uit elkaar kunnen lopen; controleer bij het starten welke van de twee jouw vertrekpunt is.
 - **Data zit in Supabase, niet in de repo.** Handmatige datacorrecties gaan via de Supabase MCP (`execute_sql`, project ref `jeqvjtnxgxpjviwhjmzr`), niet via codewijzigingen. RLS staat anon lezen/schrijven toe.
-- **De Drive-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (offerte → geaccepteerd → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen.
+- **De acquisitie-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (offerte → geaccepteerd → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen.
 - **Draai de sync altijd eerst met `--dry` en lees de uitvoer** voor je live gaat. Hij raakt echt geld: hij schrijft finance-regels en kan seed-regels vervangen. Bij twijfel over een bedrag: pinnen in de overrides, niet gokken.
 
 ## Architectuur
@@ -107,7 +107,7 @@ Zet nieuwe gedeelde modules ook in het `lint`-script: `node --check` is de enige
 **SharePoint (`/api/sharepoint`).** Microsoft Graph via de client-credentials-flow: een Azure-app-registratie met application permission `Sites.Read.All` plus admin consent. Zet `MS_CLIENT_ID` en `MS_CLIENT_SECRET` als env-vars in Netlify (nooit in de client). Optioneel: `MS_TENANT_ID` (default is de Morgen-tenant, die ook in de Teams-deeplink staat), `SHAREPOINT_HOST` (default `morgencompany.sharepoint.com`) en `SHAREPOINT_SITES` (komma-lijst met sitepaden; leeg = alle sites die de app mag zien). Ontbreken de twee verplichte vars, dan geeft het endpoint netjes `ok:false` met uitleg en blijft de tegel gewoon doorlinken naar SharePoint. De flyout haalt per site de top-level items van de standaard documentbibliotheek en sorteert zelf op `lastModifiedDateTime`: `$orderby` levert op sommige bibliotheken een 501 op.
 
 ## Acquisitie-sync (`scripts/sync-acquisitie.mjs`)
-Leest de Drive-map `Morgen Academy/Acquisitie` (statusmappen `1. Pending` … `5. Betaald`, plus `Archive` = overslaan) en upsert naar Supabase. Offertes mogen **`.pdf`, `.html` of `.txt`** zijn (PDF wint als er meerdere formaten liggen). Ontwerp: `docs/superpowers/specs/2026-06-16-acquisitie-dashboard-sync-design.md`.
+Leest de Teams-map `Marketing en Sales/Acquisitie` (statusmappen `1. Pending` … `5. Betaald`, plus `Archive` = overslaan) en upsert naar Supabase. Het pad staat als `ACQ_DIR_TEAMS` in het script en is te overschrijven met de env-var `ACQ_DIR`; ontbreekt de map, dan stopt de sync met uitleg in plaats van terug te vallen op de oude Google Drive-map (die is bij de verhuizing achtergebleven en zou statussen terugdraaien). Offertes mogen **`.pdf`, `.html` of `.txt`** zijn (PDF wint als er meerdere formaten liggen). Ontwerp: `docs/superpowers/specs/2026-06-16-acquisitie-dashboard-sync-design.md`.
 
 Statusmap → wat er gebeurt:
 
@@ -124,7 +124,7 @@ Eén finance-id per project, dus een map verslepen **werkt de bestaande regel bi
 **Wat een live-run met bestaande rijen doet:** van een project dat al bestaat wordt **alleen `pipeline_status` gepatcht** — naam, bedrag en omschrijving blijven staan. Alleen nieuwe projecten krijgen een volledige insert. Handmatige verfijningen in het dashboard overleven de sync dus.
 
 ### Vallen (allemaal een keer misgegaan)
-- **Google Drive-placeholders.** File Stream houdt bestanden soms als placeholder (metadata lokaal, inhoud niet). `pdftotext` hangt dan of geeft lege output. `pdfText()` geeft `null` (≠ `''`), slaat het bestand over, en een live-run **breekt af** tenzij `--force` — anders ontstaan spookprojecten ("Onbekend: 003") of sneuvelen seed-regels. Vereist `pdftotext` (`brew install poppler`). Herstellen: in Finder rechtsklik map → *Download now*.
+- **Cloud-placeholders.** OneDrive (Files On-Demand) houdt bestanden soms als placeholder (metadata lokaal, inhoud niet), net als Google Drive File Stream vroeger. `pdftotext` hangt dan of geeft lege output. `pdfText()` geeft `null` (≠ `''`), slaat het bestand over, en een live-run **breekt af** tenzij `--force` — anders ontstaan spookprojecten ("Onbekend: 003") of sneuvelen seed-regels. Vereist `pdftotext` (`brew install poppler`). Herstellen: in Finder rechtsklik map → *Altijd behouden op dit apparaat*.
 - **Klant bestaat al onder een ander id.** De klantnaam wordt naar een id geslugd (`GB Steel and Wood` → `cus_gb_steel_and_wood`) terwijl de klant al bestond als `cus_gb_steel` → dubbele klant én dubbel project. `main()` matcht daarom eerst op genormaliseerde naam. Bestaat een project al handmatig? Zet 'm in **`ID_ALIAS`**, anders komt er een `prj_acq_*` naast.
 - **Eén klant, meerdere projecten.** De klant→project-heuristiek haakt af zodra een klant een 2e project heeft; z'n facturen vallen dan stil uit de sync (alleen een `⚑`-regel). Gebruik **`INVOICE_FOLDER_PROJECT`** om een factuurmap hard aan een project te pinnen.
 - **MichielPro is een kanaal, geen klant.** Michiel haalt opdrachten binnen (Onview, PharmaPartners, PinkRoccade) en wij factureren hém. De eindklant staat in de staart van de mapnaam. Boek nooit op "MichielPro" zelf.
