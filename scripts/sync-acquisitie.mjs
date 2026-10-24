@@ -95,6 +95,9 @@ const ID_ALIAS = {
   // zit via slugify(clientName) in het id. Zonder deze alias komt de sync met een
   // tweede rij naast het project dat op 16-07 al is aangemaakt.
   prj_acq_260716_trappenfabriek_vermeulen_b_v: 'prj_acq_260716_vermeulen',
+  // Zodra de PDF's leesbaar zijn kiest de sync 'Bijlage 1' als offerte; het project
+  // bestond al onder het id van de eerdere (onvolledige) run.
+  prj_acq_2026_07_10_bijlage_1_begeleiding_one_age: 'prj_acq_2026_07_10_offerte',
 };
 
 // Per-offerte correcties (bedrag/naam/klant). Gevuld voor de backfill.
@@ -350,7 +353,8 @@ function classifyFolder(subPath, files) {
 }
 
 function parseInvoice(text) {
-  const num = (text.match(/Factuur\s+(\d{6}-\d{3})/i) || [])[1] || null;
+  // Karin's nummers zijn "202607-021"; de Morgen-factuurskill zet "Factuurnummer 2610001".
+  const num = (text.match(/Factuur\s+(\d{6}-\d{3})/i) || text.match(/Factuurnummer\s+(\d{7})\b/i) || [])[1] || null;
   const lines = text.split(/\r?\n/);
   let ex = null;
   for (const l of lines) if (/subtotaal|totaal ex/i.test(l)) { const a = parseEuro(l); if (a) ex = a; }
