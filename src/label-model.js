@@ -20,3 +20,10 @@ export function deriveServiceLabel(productType) {
 export function deriveChannel(text) {
   return /michielpro/i.test(String(text || '')) ? 'michielpro' : 'direct';
 }
+
+// De map '2. Geaccepteerd' kent geen 'in uitvoering': dat zet je met de hand in
+// het dashboard. De sync mag een project dat al loopt daarom niet terugzetten.
+export function syncPipelineStatus(current, fromFolder) {
+  if (current === 'uitvoering' && fromFolder === 'geaccepteerd') return current;
+  return fromFolder;
+}

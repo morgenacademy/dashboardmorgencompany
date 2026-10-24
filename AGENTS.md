@@ -121,7 +121,7 @@ Statusmap → wat er gebeurt:
 
 Eén finance-id per project, dus een map verslepen **werkt de bestaande regel bij** i.p.v. te verdubbelen.
 
-**Wat een live-run met bestaande rijen doet:** van een project dat al bestaat wordt **alleen `pipeline_status` gepatcht** — naam, bedrag en omschrijving blijven staan. Alleen nieuwe projecten krijgen een volledige insert. Handmatige verfijningen in het dashboard overleven de sync dus.
+**Wat een live-run met bestaande rijen doet:** van een project dat al bestaat wordt **alleen `pipeline_status` gepatcht** — naam, bedrag en omschrijving blijven staan. Alleen nieuwe projecten krijgen een volledige insert. Handmatige verfijningen in het dashboard overleven de sync dus. Uitzondering op dat patchen: een project dat je handmatig op `uitvoering` hebt gezet, zet de sync niet terug naar `geaccepteerd` (`syncPipelineStatus()` in `src/label-model.js`).
 
 ### Vallen (allemaal een keer misgegaan)
 - **Cloud-placeholders.** OneDrive (Files On-Demand) houdt bestanden soms als placeholder (metadata lokaal, inhoud niet), net als Google Drive File Stream vroeger. `pdftotext` hangt dan of geeft lege output. `pdfText()` geeft `null` (≠ `''`), slaat het bestand over, en een live-run **breekt af** tenzij `--force` — anders ontstaan spookprojecten ("Onbekend: 003") of sneuvelen seed-regels. Vereist `pdftotext` (`brew install poppler`). Herstellen: in Finder rechtsklik map → *Altijd behouden op dit apparaat*.
