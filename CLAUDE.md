@@ -131,3 +131,8 @@ Eén finance-id per project, dus een map verslepen **werkt de bestaande regel bi
 - **Bedragen niet raden.** Bandbreedtes ("€31.500–€33.300") of afgeleide bedragen ("50% van €2.222") parset geen enkele regex betrouwbaar → pin ze in `scripts/acquisitie-overrides.json` (op de acq-basis-id, vóór alias). Notitie-offertes met expliciete velden (`Klant:` / `Omschrijving:` / `Bedrag:`) leest `parseNote()` wel.
 - **Datum-tokens botsen.** Twee mappen van dezelfde dag deelden één id-token; wie welk id kreeg hing af van de leesvolgorde van de map. Id's worden daarom in een tweede pass toegekend, met klant-suffix bij een botsing.
 - **`timeout` bestaat niet op deze Mac.** Gebruik geen `timeout ...` in shell-checks (faalt stil met exit 127); `spawnSync`'s `timeout`-optie doet dat werk.
+
+## Open vragen voor Karin
+Stel deze vraag aan het begin van een sessie met Karin, en haal hem hier weg zodra hij beantwoord en verwerkt is.
+
+- **VML: training 22 mei 2026** (`prj_vml`) staat nog op `geaccepteerd`. Factuur 202605-012 (Training Basis + Gevorderd, €1.750) is al ontvangen, dus waarschijnlijk is de training afgerond. Klopt dat? Zet het project dan op `afgerond`, met een Supabase-update, want deze status komt niet uit de acquisitie-map.
