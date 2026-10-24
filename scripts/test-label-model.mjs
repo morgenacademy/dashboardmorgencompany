@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveServiceLabel, deriveChannel, PRODUCT_TYPE_TO_LABEL } from '../src/label-model.js';
+import { deriveServiceLabel, deriveChannel, syncPipelineStatus, PRODUCT_TYPE_TO_LABEL } from '../src/label-model.js';
 
 // product_type -> service_label
 assert.equal(deriveServiceLabel('automatisering'), 'build');
@@ -21,5 +21,12 @@ assert.equal(deriveChannel('MichielPro training'), 'michielpro');
 assert.equal(deriveChannel('Gewone offerte'), 'direct');
 assert.equal(deriveChannel(''), 'direct');
 assert.equal(deriveChannel(null), 'direct');
+
+// sync zet een lopend project niet terug naar geaccepteerd
+assert.equal(syncPipelineStatus('uitvoering', 'geaccepteerd'), 'uitvoering');
+assert.equal(syncPipelineStatus('uitvoering', 'afgerond'), 'afgerond');
+assert.equal(syncPipelineStatus('geaccepteerd', 'afgerond'), 'afgerond');
+assert.equal(syncPipelineStatus('offerte_verzonden', 'geaccepteerd'), 'geaccepteerd');
+assert.equal(syncPipelineStatus(undefined, 'geaccepteerd'), 'geaccepteerd');
 
 console.log('label-model: OK');

@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename, extname, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deriveServiceLabel, deriveChannel } from '../src/label-model.js';
+import { deriveServiceLabel, deriveChannel, syncPipelineStatus } from '../src/label-model.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -315,6 +315,9 @@ const INVOICE_FOLDER_PROJECT = {
   // VML krijgt een 2e project zodra de Moderator-offerte binnenkomt; zonder pin
   // haakt de klant→project-heuristiek af en stoppen deze facturen met syncen.
   'vereniging logistiek management': 'prj_vml',
+  // Nacalculatie op uren: elke maandfactuur hoort bij Agentic Teams, niet bij de
+  // eerdere Claude Code-training (die heeft z'n eigen MichielPro-pin hierboven).
+  pharmapartners: 'prj_acq_2026_07_10_offerte',
 };
 
 function normName(s) {
@@ -729,11 +732,14 @@ async function main() {
 
   // Offerte-projecten: bestaand → status patchen; nieuw → insert. + nieuwe factuur-projecten.
   const ids = [...new Set(records.map((r) => r.id))];
-  const existIds = new Set((ids.length ? await sb(`projects?select=id&id=in.(${ids.join(',')})`) : []).map((p) => p.id));
+  const existStatus = new Map((ids.length ? await sb(`projects?select=id,pipeline_status&id=in.(${ids.join(',')})`) : []).map((p) => [p.id, p.pipeline_status]));
   const toInsert = [];
   let patched = 0;
   for (const r of records) {
-    if (existIds.has(r.id)) { await sb(`projects?id=eq.${r.id}`, { method: 'PATCH', body: { pipeline_status: r.pipeline_status }, prefer: 'return=minimal' }); patched++; }
+    if (existStatus.has(r.id)) {
+      const status = syncPipelineStatus(existStatus.get(r.id), r.pipeline_status);
+      if (status !== existStatus.get(r.id)) { await sb(`projects?id=eq.${r.id}`, { method: 'PATCH', body: { pipeline_status: status }, prefer: 'return=minimal' }); patched++; }
+    }
     else toInsert.push({ id: r.id, customer_id: r.customer_id, name: r.name, description: '', pipeline_status: r.pipeline_status, product_type: r.product_type, service_label: deriveServiceLabel(r.product_type), label_reviewed: false, channel: deriveChannel(`${r.name} ${r.hay || ''}`), forecast_amount: r.forecast_amount || 0, actual_amount: 0, value_amount: r.forecast_amount || 0, pricing_model: 'project', priority: 'medium', owner: r.owner || 'Harmen', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: r.date || null, accepted_date: r.pipeline_status === 'geaccepteerd' ? (r.date || null) : null, next_action: '', next_action_date: null });
   }
   for (const p of invNewProjects) toInsert.push({ id: p.id, customer_id: p.customer_id, name: p.name, description: '', pipeline_status: p.pipeline_status, product_type: 'other', service_label: 'other', label_reviewed: false, channel: deriveChannel(p.name), forecast_amount: 0, actual_amount: 0, value_amount: 0, pricing_model: 'project', priority: 'medium', owner: p.owner || 'Karin', lead_source: 'netwerk', is_breakthrough: false, estimated_hours: 0, start_date: null, accepted_date: null, next_action: '', next_action_date: null });
