@@ -90,6 +90,7 @@ Tot er een Morgen BV is (gepland per 1-1-2027) factureert en betaalt Harmen name
 - **Grondslag.** Alles ex btw: omzet staat al ex btw; bij kosten gaat `vat_amount` eraf. Periode t/m 31-12-2026. Saldo op `payment_status='ontvangen'`; `gefactureerd` staat apart als open (met een tweede saldo "als alles betaald is"); `verwacht` telt niet.
 - **Wie is wie.** `owner` (`Harmen`/`Karin`) bepaalt bij wie het geld binnenkwam of vanaf wie het betaald is. `entity='HvH BV'` is Harmens eigen BV-kost (iMac, sluitpost) en telt niet mee. Prognose-templates (`manual` + `monthly`) tellen niet; `manual`-regels en regels met "SCHATTING" in de omschrijving tellen wel, maar worden als geschat gemarkeerd.
 - **Bedragen op de cent.** Deze tab formatteert met twee decimalen, de rest van het dashboard rondt af.
+- **Geen invoer op de tab, bewust.** Verrekeningen (`settlements`) en btw-bedragen (`vat_amount`) zet Claude op verzoek rechtstreeks in Supabase; de tab is alleen-lezen. De uitkomst staat als twee vaste regels (Harmen → Karin, Karin → Harmen), alleen de richting die moet gebeuren krijgt een bedrag.
 
 ### Funnel-vocabulaire (cross-cutting, zit in `app.js`)
 Ruwe `projects.pipeline_status` ≠ de buckets die de UI toont. `acquisitieBuckets(db)` vertaalt alles naar één gedeelde funnel: **Lead · Pending · Geaccepteerd · Gefactureerd · Betaald · Afgewezen**. Cruciaal:

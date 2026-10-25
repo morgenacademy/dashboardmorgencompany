@@ -83,12 +83,15 @@ const near = (actual, expected, msg) => assert.ok(Math.abs(actual - expected) < 
   ] });
   near(m.verschuldigd, 500, 'verschuldigd');
   near(m.alVerrekend, 44, 'al van Harmen naar Karin');
+  near(m.verrekend.HarmenNaarKarin, 44, 'verrekend per richting: Harmen → Karin');
+  near(m.verrekend.KarinNaarHarmen, 0, 'verrekend per richting: Karin → Harmen');
   near(m.resterend, 456, 'resterend na verrekening');
 
   m = afsluitingModel({ finance: base, settlements: [
     { id: 's2', date: '2026-02-01', from_person: 'Karin', to_person: 'Harmen', amount: 100 },
   ] });
   near(m.resterend, 600, 'betaling Karin → Harmen verhoogt wat Harmen moet');
+  near(m.verrekend.KarinNaarHarmen, 100, 'verrekend per richting: Karin → Harmen');
 
   // Karin is per saldo verschuldigd → richting draait om
   m = afsluitingModel({ finance: [

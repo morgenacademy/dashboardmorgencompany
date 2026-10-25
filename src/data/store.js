@@ -160,18 +160,6 @@ export async function deleteFinance(id) {
   await loadAll();
 }
 
-export async function upsertSettlement(settlement) {
-  const { error } = await supabase.from('settlements').upsert(settlement);
-  if (error) throw error;
-  await loadAll();
-}
-
-export async function deleteSettlement(id) {
-  const { error } = await supabase.from('settlements').delete().eq('id', id);
-  if (error) throw error;
-  await loadAll();
-}
-
 export function nextId(prefix) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }

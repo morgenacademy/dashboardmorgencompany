@@ -109,11 +109,12 @@ export function afsluitingModel(db, { tot = TOT } = {}) {
   const verrekeningen = [...(db.settlements || [])]
     .filter((s) => s.date && s.date <= tot)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const alVerrekend = verrekeningen.reduce((s, v) => {
-    if (v.from_person === 'Harmen' && v.to_person === 'Karin') return s + num(v.amount);
-    if (v.from_person === 'Karin' && v.to_person === 'Harmen') return s - num(v.amount);
-    return s;
-  }, 0);
+  const verrekend = { HarmenNaarKarin: 0, KarinNaarHarmen: 0 };
+  for (const v of verrekeningen) {
+    if (v.from_person === 'Harmen' && v.to_person === 'Karin') verrekend.HarmenNaarKarin += num(v.amount);
+    if (v.from_person === 'Karin' && v.to_person === 'Harmen') verrekend.KarinNaarHarmen += num(v.amount);
+  }
+  const alVerrekend = verrekend.HarmenNaarKarin - verrekend.KarinNaarHarmen;
 
   const resterend = verschuldigd - alVerrekend;
   const resterendInclOpen = ((h.netto + h.open) - (k.netto + k.open)) / 2 - alVerrekend;
@@ -130,6 +131,7 @@ export function afsluitingModel(db, { tot = TOT } = {}) {
     personen,
     verschuldigd,
     verrekeningen,
+    verrekend,
     alVerrekend,
     resterend,
     resterendInclOpen,
@@ -186,14 +188,14 @@ export function renderAfsluiting(db, { escapeHtml, settlementsError = null } = {
   const verrekenRijen = m.verrekeningen.map((v) => `<tr>
     <td>${datum(v.date)}</td><td>${esc(v.from_person)} → ${esc(v.to_person)}</td><td>${esc(v.description)}</td>
     <td class="num">${eur(v.amount)}</td>
-    <td><button type="button" class="button ghost" data-action="afs-del-settlement" data-id="${esc(v.id)}">Verwijder</button></td>
   </tr>`).join('');
+
+  // Twee vaste regels, één per richting; alleen de richting die moet gebeuren krijgt een bedrag.
+  const overmaken = (van, naar) => (m.richting.van === van ? eur(m.richting.bedrag) : '—');
 
   const openRijen = [...h.openFacturen.map((e) => ['Harmen', e]), ...k.openFacturen.map((e) => ['Karin', e])]
     .map(([naam, e]) => `<tr><td>${datum(e.date)}</td><td>${esc(naam)}</td><td>${esc(e.vendor)}</td><td>${esc(e.description)}</td><td class="num">${eur(e.amount)}</td></tr>`)
     .join('');
-
-  const vandaag = new Date().toISOString().slice(0, 10);
 
   return `<div class="page an-page afs-page">
     <header class="page-head">
@@ -219,9 +221,10 @@ export function renderAfsluiting(db, { escapeHtml, settlementsError = null } = {
         <tr><td>Netto Karin</td><td class="num">${eur(k.netto)}</td></tr>
         <tr><td>Totaal netto Morgen</td><td class="num">${eur(h.netto + k.netto)}</td></tr>
         <tr><td>Ieders helft</td><td class="num">${eur((h.netto + k.netto) / 2)}</td></tr>
-        <tr><td>Harmen is Karin verschuldigd: (netto Harmen − netto Karin) ÷ 2</td><td class="num">${eur(m.verschuldigd)}</td></tr>
-        <tr><td>Al verrekend (Harmen → Karin, min Karin → Harmen)</td><td class="num">− ${eur(m.alVerrekend)}</td></tr>
-        <tr class="afs-calc__total"><td>Nog over te maken door Harmen (negatief = door Karin)</td><td class="num">${eur(m.resterend)}</td></tr>
+        ${m.verrekend.HarmenNaarKarin ? `<tr><td>Al betaald: Harmen → Karin</td><td class="num">${eur(m.verrekend.HarmenNaarKarin)}</td></tr>` : ''}
+        ${m.verrekend.KarinNaarHarmen ? `<tr><td>Al betaald: Karin → Harmen</td><td class="num">${eur(m.verrekend.KarinNaarHarmen)}</td></tr>` : ''}
+        <tr class="afs-calc__total"><td>Nog over te maken: Harmen → Karin</td><td class="num">${overmaken('Harmen', 'Karin')}</td></tr>
+        <tr class="afs-calc__total afs-calc__total--next"><td>Nog over te maken: Karin → Harmen</td><td class="num">${overmaken('Karin', 'Harmen')}</td></tr>
       </tbody></table>
       <p class="sub-h">Per jaar</p>
       <table class="an-table"><thead><tr><th>Jaar</th><th class="num">Harmen binnen</th><th class="num">Harmen betaald</th><th class="num">Karin binnen</th><th class="num">Karin betaald</th></tr></thead><tbody>${jaarRijen}</tbody></table>
@@ -229,18 +232,10 @@ export function renderAfsluiting(db, { escapeHtml, settlementsError = null } = {
 
     <section class="card an-card">
       <p class="eyebrow">Al verrekend</p>
-      <p class="muted">Onderlinge betalingen die al gedaan zijn, ex btw. Ze gaan van het saldo af.</p>
+      <p class="muted">Onderlinge betalingen die al gedaan zijn, ex btw. Ze gaan van het saldo af. Toevoegen of wijzigen: vraag het aan Claude.</p>
       ${settlementsError ? `<p class="afs-warn">De tabel voor verrekeningen is niet bereikbaar (${esc(settlementsError)}). Voer de migratie uit in <code>docs/sql/2026-10-25-afsluiting-bv.sql</code>.</p>` : ''}
-      <table class="an-table"><thead><tr><th>Datum</th><th>Van → naar</th><th>Omschrijving</th><th class="num">Ex btw</th><th></th></tr></thead>
-      <tbody>${verrekenRijen || '<tr><td colspan="5" class="muted">Nog niets verrekend</td></tr>'}</tbody></table>
-      <form class="afs-form" data-action="afs-add-settlement">
-        <label><span>Datum</span><input type="date" name="date" value="${vandaag}" required /></label>
-        <label><span>Van</span><select name="from_person"><option>Harmen</option><option>Karin</option></select></label>
-        <label><span>Naar</span><select name="to_person"><option>Karin</option><option>Harmen</option></select></label>
-        <label><span>Bedrag ex btw</span><input type="number" name="amount" step="0.01" min="0.01" required /></label>
-        <label class="afs-form__wide"><span>Omschrijving</span><input type="text" name="description" placeholder="bijv. factuur 202503-003" /></label>
-        <button type="submit" class="button">Toevoegen</button>
-      </form>
+      <table class="an-table"><thead><tr><th>Datum</th><th>Van → naar</th><th>Omschrijving</th><th class="num">Ex btw</th></tr></thead>
+      <tbody>${verrekenRijen || '<tr><td colspan="4" class="muted">Nog niets verrekend</td></tr>'}</tbody></table>
     </section>
 
     <section class="card an-card">
