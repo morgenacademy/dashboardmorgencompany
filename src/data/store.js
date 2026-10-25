@@ -34,6 +34,8 @@ let cache = {
   projects: [],
   tasks: [],
   finance: [],
+  settlements: [],
+  settlementsError: null,
   loading: true,
   error: null,
 };
@@ -83,8 +85,11 @@ export async function loadAll() {
       supabase.from('projects').select('*').order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('finance_entries').select('*').order('date', { ascending: false }),
+      supabase.from('settlements').select('*').order('date', { ascending: true }),
     ]), 6000, 'loadAll');
-    const [customers, projects, tasks, finance] = result;
+    const [customers, projects, tasks, finance, settlements] = result;
+    // settlements (Afsluiting voor BV) is optioneel: ontbreekt de tabel nog,
+    // dan blijft de rest van het dashboard gewoon werken.
     const firstError = [customers, projects, tasks, finance].find((r) => r.error)?.error;
     if (firstError) throw firstError;
     cache = {
@@ -92,6 +97,8 @@ export async function loadAll() {
       projects: projects.data || [],
       tasks: tasks.data || [],
       finance: finance.data || [],
+      settlements: settlements.error ? [] : (settlements.data || []),
+      settlementsError: settlements.error ? (settlements.error.message || String(settlements.error)) : null,
       loading: false,
       error: null,
     };
@@ -149,6 +156,18 @@ export async function upsertFinance(entry) {
 
 export async function deleteFinance(id) {
   const { error } = await supabase.from('finance_entries').delete().eq('id', id);
+  if (error) throw error;
+  await loadAll();
+}
+
+export async function upsertSettlement(settlement) {
+  const { error } = await supabase.from('settlements').upsert(settlement);
+  if (error) throw error;
+  await loadAll();
+}
+
+export async function deleteSettlement(id) {
+  const { error } = await supabase.from('settlements').delete().eq('id', id);
   if (error) throw error;
   await loadAll();
 }
