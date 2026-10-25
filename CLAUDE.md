@@ -143,16 +143,46 @@ Eén finance-id per project, dus een map verslepen **werkt de bestaande regel bi
 - **Datum-tokens botsen.** Twee mappen van dezelfde dag deelden één id-token; wie welk id kreeg hing af van de leesvolgorde van de map. Id's worden daarom in een tweede pass toegekend, met klant-suffix bij een botsing.
 - **`timeout` bestaat niet op deze Mac.** Gebruik geen `timeout ...` in shell-checks (faalt stil met exit 127); `spawnSync`'s `timeout`-optie doet dat werk.
 
-## Afsluiting voor BV: wat Karin moet aanleveren
-Karins kant is nog niet compleet. Haar kosten staan er nu in als vaste geschatte maandbedragen (`fin_karin_actual_*`, € 132,31 per maand, alleen jan t/m jul 2026). Voor een eerlijke afsluiting moet Karin aanleveren, en dan zet je het in Supabase:
+## Afsluiting voor BV: werkwijze met Karin
+Karins kant is nog niet compleet. Haar kosten staan er nu in als vaste **geschatte** maandbedragen (`fin_karin_actual_<jjjjmm>`, € 132,31 per maand, alleen jan t/m jul 2026). Doel: vóór 31-12-2026 haar echte cijfers erin, zodat de tab `#/afsluiting` het juiste bedrag geeft. Jij (Claude) zet alles in Supabase met `execute_sql` (project `jeqvjtnxgxpjviwhjmzr`); de tab heeft bewust geen invoer. Zonder Supabase-koppeling in de sessie kun je dit niet doen: zeg dat dan meteen.
 
-1. **Alle kosten die zij namens Morgen betaald heeft, vanaf de start (2025 én 2026):** per post datum, leverancier, bedrag zoals betaald en het btw-bedrag (→ `vat_amount`), met de bon. Deze vervangen de geschatte `fin_karin_actual_*`-regels (`owner='Karin'`, `entity='Karin'`, `source='invoice'` of `bank_export`, `recurring='one_off'`). Bekend en al opgenomen: Wix € 132 (26-03-2025). Bekend maar nog niet opgenomen: Lovable $ 12,50 (13-12-2025).
-2. **Welke van haar facturen betaald zijn en wanneer.** 202607-021, 202607-022 en 202607-023 (juli 2026) staan nog op gefactureerd. Betaald? Dan de pdf in de acquisitie-map naar `5. Betaald` en de sync draaien.
-3. **Haar omzet namens Morgen uit 2025.** Nu staan alleen Trappenfabriek Vermeulen (€ 765) en Mariette Reineke (€ 800) erin.
-4. **Eerdere onderlinge betalingen** tussen haar en Harmen (van/naar, datum, bedrag ex btw), voor de lijst "Al verrekend" op de tab. Al opgenomen: factuur 202503-003 (gedeelde websitekosten, € 44 ex btw, door Harmen betaald op 10-04-2025).
-5. **Akkoord op de rekenregel:** 50/50 van het netto resultaat, ex btw, t/m 31-12-2026.
+**Begin van een sessie met Karin:** open `#/afsluiting` (of reken het na met `afsluitingModel`), noem het huidige saldo en het aantal geschatte posten, en loop daarna de lijst hieronder af. Lees na elke schrijfactie terug wat er in de tabel staat voordat je zegt dat het gelukt is.
 
-Harmens kant is per 25-10-2026 gecontroleerd tegen Rabo (MT940) en creditcard (ICS) vanaf 2025. Open punt aan zijn kant: Stripe-uitbetalingen "MORGEN ACADEMY" in oktober 2025 (€ 146,09 + € 72,82 + € 72,82) en Wix Payments (€ 48,70, 8-12-2025). Waarschijnlijk ticketverkoop; in het dashboard staat nu alleen "AI training particulier" (€ 61,98).
+### Wat Karin aanlevert, en wat jij ermee doet
+1. **Kosten die zij namens Morgen betaald heeft, vanaf de start (2025 én 2026).** Alleen Morgen-kosten, niet die van haar eigen andere werk. Per post: datum, leverancier, bedrag zoals betaald, btw-bedrag en de bon. Bonnen gaan in de OneDrive-map `Morgen intern/Admin/Finance/Crediteuren/<jaar> Q<n> Karin`, met de naamgeving `JJMMDD Leverancier EUR x,xx - factuurnr.pdf`.
+   Zet elke post als `finance_entries`-regel:
+   ```sql
+   insert into finance_entries (id, date, type, description, amount, vat_amount, category, vendor,
+     project_id, recurring, source, owner, entity, factuur_status, payment_status)
+   values ('fin_exp_karin_20260312_hostnet', '2026-03-12', 'expense', 'Hostnet — hosting morgenacademy (factuur 123)',
+     12.10, 2.10, 'Software/SaaS', 'Hostnet', null, 'one_off', 'invoice', 'Karin', 'Karin', '✓ Factuur', 'verwacht');
+   ```
+   - `amount` is het betaalde bedrag; `vat_amount` is het Nederlandse btw-deel daarvan. Laat `vat_amount` leeg bij buitenlandse SaaS met verlegde btw ("reverse charge"). Staat er wel NL-btw op de bon (Anthropic voor particulieren, Hostnet, Microsoft), vul hem in.
+   - `category` uit de bestaande set: `Software/SaaS`, `AI/API credits`, `Verzekering`, `Hardware`, `Juridisch`, `Overig`.
+   - Kosten staan altijd op `payment_status='verwacht'`. Dat is de bestaande conventie, niet aanpassen.
+   - **Is een maand compleet, verwijder dan de schattingen van die maand:** `delete from finance_entries where id like 'fin_karin_actual_%_202603';`. Laat de `fin_karin_kost_*`-regels staan: dat zijn prognose-templates (`manual` + `monthly`) en die tellen niet mee in de afsluiting.
+   - Bekend en al opgenomen: Wix € 132 (26-03-2025, `fin_exp_2025_wix_1169710647`). Bekend maar nog niet opgenomen: Lovable $ 12,50 op 13-12-2025 (Mastercard 7114, bon in `Crediteuren/2025 Q4 Harmen`, naam eindigt op "(Karin)").
+   - Herkennen wie betaald heeft: Harmen betaalt met Mastercard **9585** of de Rabo-rekening van Harmen van Heist B.V. Op Karins kaarten zijn eerder **7114** (Lovable) en **7476** (Anthropic) gezien.
+2. **Welke van haar facturen betaald zijn, en wanneer.** 202607-021, 202607-022 en 202607-023 (juli 2026) staan nog op gefactureerd. Betaald? Verplaats de pdf in de acquisitie-map naar `5. Betaald` en draai de sync (eerst `--dry`). Zet ze niet los in Supabase.
+3. **Haar omzet namens Morgen uit 2025.** Nu staan alleen Trappenfabriek Vermeulen (€ 765) en Mariette Reineke (€ 800) erin. Ontbreekt er iets, dan liefst via de acquisitie-map. Zonder pdf: een `income`-regel met `owner='Karin'`, `entity='Karin'`, `payment_status='ontvangen'` en het bedrag **ex btw**.
+4. **Eerdere onderlinge betalingen** tussen Karin en Harmen, bedrag ex btw:
+   ```sql
+   insert into settlements (id, date, from_person, to_person, amount, description)
+   values ('set_20260115_karin_harmen', '2026-01-15', 'Karin', 'Harmen', 100.00, 'omschrijving');
+   ```
+   Al opgenomen: `set_202503_003` (Karins factuur 202503-003, gedeelde websitekosten, € 44 ex btw, door Harmen betaald op 10-04-2025).
+5. **Akkoord op de rekenregel:** 50/50 van het netto resultaat, ex btw, t/m 31-12-2026, op ontvangen geld.
+
+### Klaar als
+- Er staan geen geschatte posten meer bij Karin op de tab (de rode melding is weg).
+- Alle juli-facturen hebben een definitieve status.
+- Harmen en Karin zijn het eens over de lijst "Al verrekend".
+- De bovenste zin op de tab is het bedrag dat overgemaakt wordt. Na die betaling voeg je hem toe als verrekening; dan staan beide regels op "—".
+
+### Open punten aan Harmens kant
+Harmens kant is per 25-10-2026 gecontroleerd tegen Rabo (MT940) en creditcard (ICS) vanaf 2025. Nog open:
+- Stripe-uitbetalingen "MORGEN ACADEMY" in oktober 2025 (€ 146,09 + € 72,82 + € 72,82) en Wix Payments (€ 48,70, 8-12-2025). Waarschijnlijk ticketverkoop; in het dashboard staat nu alleen "AI training particulier" (€ 61,98).
+- Coolblue, Logitech R500s presenter: twee keer gekocht (27-03 en 03-04-2026, elk € 46,99). Alleen die van april staat als Morgen-kost in het dashboard.
 
 ## Open vragen voor Karin
 Stel deze vraag aan het begin van een sessie met Karin, en haal hem hier weg zodra hij beantwoord en verwerkt is.
