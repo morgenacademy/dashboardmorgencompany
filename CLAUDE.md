@@ -181,8 +181,9 @@ Karins kant is nog niet compleet. Haar kosten staan er nu in als vaste **geschat
 
 ### Open punten aan Harmens kant
 Harmens kant is per 25-10-2026 gecontroleerd tegen Rabo (MT940) en creditcard (ICS) vanaf 2025. Nog open:
-- Stripe-uitbetalingen "MORGEN ACADEMY" in oktober 2025 (€ 146,09 + € 72,82 + € 72,82) en Wix Payments (€ 48,70, 8-12-2025). Waarschijnlijk ticketverkoop; in het dashboard staat nu alleen "AI training particulier" (€ 61,98).
-- Coolblue, Logitech R500s presenter: twee keer gekocht (27-03 en 03-04-2026, elk € 46,99). Alleen die van april staat als Morgen-kost in het dashboard.
+- Wix Payments € 48,70 op 8-12-2025 (Stripe-uitbetaling "WIX PAYMENTS" op de BV-Rabo): onbekend waarvoor; mogelijk een testaankoop na het activeren van Wix-uitbetalingen op 9-12-2025.
+
+Opgelost op 25-10-2026: de Stripe-uitbetalingen "MORGEN ACADEMY" van oktober 2025 (€ 291,73 netto) zijn de 4 tickets voor de AI Workshop Den Bosch van 24-10-2025 (4 × € 61,98 ex btw = € 247,92). De sync las alleen de eerste factuur uit de pdf; het bedrag is vastgezet in `acquisitie-overrides.json` (`prj_acq_251024`).
 
 ## Open vragen voor Karin
 Stel deze vraag aan het begin van een sessie met Karin, en haal hem hier weg zodra hij beantwoord en verwerkt is.
