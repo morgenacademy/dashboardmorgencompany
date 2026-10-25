@@ -20,9 +20,10 @@ node scripts/test-sync-unreadable.mjs      # regressietest voor de sync (fixture
 node scripts/test-finance-model.mjs        # regressietest voor actuals versus prognose (geen netwerk nodig)
 node scripts/test-label-model.mjs          # regressietest voor label/kanaal-afleiding (geen netwerk nodig)
 node scripts/test-analyse.mjs              # regressietest voor de Analyse-tab: model + gaps (geen netwerk nodig)
+node scripts/test-afsluiting.mjs           # regressietest voor de Afsluiting-tab: saldo Harmen/Karin (geen netwerk nodig)
 ```
 
-Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test`-script). Gebruik de vier gerichte regressietests hierboven. De README beschrijft bovendien een **verouderde** architectuur (LocalStorage, `src/domain/`, `seed.js`, `products`/`deliveries`/`reviews`) die niet meer bestaat — **vertrouw de code, niet de README.**
+Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test`-script). Gebruik de vijf gerichte regressietests hierboven. De README beschrijft bovendien een **verouderde** architectuur (LocalStorage, `src/domain/`, `seed.js`, `products`/`deliveries`/`reviews`) die niet meer bestaat — **vertrouw de code, niet de README.**
 
 **Een UI-wijziging verifiëren.** Voor de rekenmodellen zijn er regressietests, voor de twee pagina's niet. Wat hier werkt: `npm start`, dan headless Chromium (Playwright) tegen `http://localhost:4173`, `/api/*` stubben met een vast antwoord, en de tegels echt aanklikken. Zo controleer je volgorde, flyout-inhoud, hrefs en JS-fouten zonder Netlify of Supabase nodig te hebben.
 
@@ -53,7 +54,7 @@ Haal alles wat in een attribuut belandt door `escapeHtml()`, ook `href`: de Team
 Eén groot bestand. Hash-router (`#/`, `#/analyse`, `#/acquisitie`, `#/projecten`, `#/taken`, `#/finance`, `#/klanten`). Rendering is **template-literals**: `renderApp()` bouwt een HTML-string en zet die in `#app`, daarna `attachEvents()`. Geen framework, geen virtual DOM — na elke mutatie volledig herrenderen. `main.js` (8 regels) doet alleen bootstrap: `renderApp()` bij DOMContentLoaded + `loadAll()`.
 
 ### Datalaag (`src/data/store.js`)
-Praat met Supabase via **lokaal gevendorde** `lib/vendor/supabase-js.js` (bewust géén runtime-import van esm.sh — dat brak het dashboard). Stateless: geen login, geen localStorage. Vier tabellen:
+Praat met Supabase via **lokaal gevendorde** `lib/vendor/supabase-js.js` (bewust géén runtime-import van esm.sh — dat brak het dashboard). Stateless: geen login, geen localStorage. Vijf tabellen:
 
 | Tabel | cache-key in `getDatabase()` |
 |---|---|
@@ -61,8 +62,9 @@ Praat met Supabase via **lokaal gevendorde** `lib/vendor/supabase-js.js` (bewust
 | `projects` | `projects` |
 | `tasks` | `tasks` |
 | `finance_entries` | **`finance`** |
+| `settlements` | `settlements` (+ `settlementsError`) |
 
-Publieke API: `loadAll()`, `getDatabase()` (sync cache), `subscribe()`, en upsert/delete-helpers per entiteit. Schrijven gaat via `upsert` (merge op `id`). `finance_entries.date` is **NOT NULL** en `source` heeft een CHECK-constraint (o.a. `invoice`/`manual`/`bank_export`, niet vrij tekst).
+Publieke API: `loadAll()`, `getDatabase()` (sync cache), `subscribe()`, en upsert/delete-helpers per entiteit. Schrijven gaat via `upsert` (merge op `id`). `finance_entries.date` is **NOT NULL** en `source` heeft een CHECK-constraint (o.a. `invoice`/`manual`/`bank_export`, niet vrij tekst). `finance_entries.vat_amount` is het btw-deel van `amount` bij kosten (leeg = geen NL-btw). `settlements` is optioneel bij het laden: ontbreekt de tabel, dan blijft de rest werken en toont de Afsluiting-tab de fout. Schema: `docs/sql/2026-10-25-afsluiting-bv.sql`.
 
 ### Finance: actual versus prognose (`src/finance-model.js`)
 Actuals en prognoses zijn bewust gescheiden en gebruiken op Overview en Finance dezelfde helpers:
@@ -80,6 +82,14 @@ Zelfstandige module met drie **pure** exports (geen DOM): `analyseModel(db, {yea
 - **Twee kolommen op `projects`.** `label_reviewed` (bool, default false) scheidt door-mens-bevestigd van door-sync-geraden. `channel` (`direct`/`michielpro`/`karin`, default `direct`) maakt partneromzet een echte dimensie i.p.v. een grep op factuurtekst. Beide sync-veilig: de sync patcht bij bestaande projecten alleen `pipeline_status`.
 - **Sync leidt af, niet raden.** `src/label-model.js` (`deriveServiceLabel`/`deriveChannel`, gedeeld door sync én app) zet bij nieuwe projecten een afgeleid label + kanaal, met `label_reviewed=false` — zo komt een geraden label (bv. `training`→`train`, terwijl het `inspire` had gemoeten) als "klopt dit?" langs de wizard i.p.v. stil te verdwijnen. `deriveChannel` leest de **haystack** (mapnaam), niet de projectnaam: die bevat de eindklant, niet 'michielpro'.
 - De **dubbele-klant-check signaleert alleen** — de duurzame fix zit in `KNOWN_CLIENTS`/`ID_ALIAS` van de sync, niet in een merge in het dashboard (die komt bij de volgende sync terug).
+
+### Afsluiting voor BV (`src/ui/afsluiting.js`, route `#/afsluiting`)
+Tot er een Morgen BV is (gepland per 1-1-2027) factureert en betaalt Harmen namens Morgen via Harmen van Heist B.V. en Karin via haar eigen onderneming. Deze tab laat per persoon zien wat er namens Morgen is binnengekomen en betaald, en wie per saldo hoeveel naar de ander overmaakt. Pure kern `afsluitingModel(db)`, render `renderAfsluiting(db, {escapeHtml, settlementsError})`; `app.js` levert nav-item, route en de events voor het verrekeningsformulier. Dek rekenregels af in `scripts/test-afsluiting.mjs`.
+
+- **Rekenregel (besloten 25-10-2026).** 50/50. Netto per persoon = ontvangen omzet − kosten. Harmen is Karin `(netto Harmen − netto Karin) ÷ 2` verschuldigd (negatief = andersom), min wat al verrekend is in `settlements` (Harmen→Karin telt af, Karin→Harmen telt bij).
+- **Grondslag.** Alles ex btw: omzet staat al ex btw; bij kosten gaat `vat_amount` eraf. Periode t/m 31-12-2026. Saldo op `payment_status='ontvangen'`; `gefactureerd` staat apart als open (met een tweede saldo "als alles betaald is"); `verwacht` telt niet.
+- **Wie is wie.** `owner` (`Harmen`/`Karin`) bepaalt bij wie het geld binnenkwam of vanaf wie het betaald is. `entity='HvH BV'` is Harmens eigen BV-kost (iMac, sluitpost) en telt niet mee. Prognose-templates (`manual` + `monthly`) tellen niet; `manual`-regels en regels met "SCHATTING" in de omschrijving tellen wel, maar worden als geschat gemarkeerd.
+- **Bedragen op de cent.** Deze tab formatteert met twee decimalen, de rest van het dashboard rondt af.
 
 ### Funnel-vocabulaire (cross-cutting, zit in `app.js`)
 Ruwe `projects.pipeline_status` ≠ de buckets die de UI toont. `acquisitieBuckets(db)` vertaalt alles naar één gedeelde funnel: **Lead · Pending · Geaccepteerd · Gefactureerd · Betaald · Afgewezen**. Cruciaal:
@@ -131,6 +141,17 @@ Eén finance-id per project, dus een map verslepen **werkt de bestaande regel bi
 - **Bedragen niet raden.** Bandbreedtes ("€31.500–€33.300") of afgeleide bedragen ("50% van €2.222") parset geen enkele regex betrouwbaar → pin ze in `scripts/acquisitie-overrides.json` (op de acq-basis-id, vóór alias). Notitie-offertes met expliciete velden (`Klant:` / `Omschrijving:` / `Bedrag:`) leest `parseNote()` wel.
 - **Datum-tokens botsen.** Twee mappen van dezelfde dag deelden één id-token; wie welk id kreeg hing af van de leesvolgorde van de map. Id's worden daarom in een tweede pass toegekend, met klant-suffix bij een botsing.
 - **`timeout` bestaat niet op deze Mac.** Gebruik geen `timeout ...` in shell-checks (faalt stil met exit 127); `spawnSync`'s `timeout`-optie doet dat werk.
+
+## Afsluiting voor BV: wat Karin moet aanleveren
+Karins kant is nog niet compleet. Haar kosten staan er nu in als vaste geschatte maandbedragen (`fin_karin_actual_*`, € 132,31 per maand, alleen jan t/m jul 2026). Voor een eerlijke afsluiting moet Karin aanleveren, en dan zet je het in Supabase:
+
+1. **Alle kosten die zij namens Morgen betaald heeft, vanaf de start (2025 én 2026):** per post datum, leverancier, bedrag zoals betaald en het btw-bedrag (→ `vat_amount`), met de bon. Deze vervangen de geschatte `fin_karin_actual_*`-regels (`owner='Karin'`, `entity='Karin'`, `source='invoice'` of `bank_export`, `recurring='one_off'`). Bekend en al opgenomen: Wix € 132 (26-03-2025). Bekend maar nog niet opgenomen: Lovable $ 12,50 (13-12-2025).
+2. **Welke van haar facturen betaald zijn en wanneer.** 202607-021, 202607-022 en 202607-023 (juli 2026) staan nog op gefactureerd. Betaald? Dan de pdf in de acquisitie-map naar `5. Betaald` en de sync draaien.
+3. **Haar omzet namens Morgen uit 2025.** Nu staan alleen Trappenfabriek Vermeulen (€ 765) en Mariette Reineke (€ 800) erin.
+4. **Eerdere onderlinge betalingen** tussen haar en Harmen (van/naar, datum, bedrag ex btw), voor de lijst "Al verrekend" op de tab. Al opgenomen: factuur 202503-003 (gedeelde websitekosten, € 44 ex btw, door Harmen betaald op 10-04-2025).
+5. **Akkoord op de rekenregel:** 50/50 van het netto resultaat, ex btw, t/m 31-12-2026.
+
+Harmens kant is per 25-10-2026 gecontroleerd tegen Rabo (MT940) en creditcard (ICS) vanaf 2025. Open punt aan zijn kant: Stripe-uitbetalingen "MORGEN ACADEMY" in oktober 2025 (€ 146,09 + € 72,82 + € 72,82) en Wix Payments (€ 48,70, 8-12-2025). Waarschijnlijk ticketverkoop; in het dashboard staat nu alleen "AI training particulier" (€ 61,98).
 
 ## Open vragen voor Karin
 Stel deze vraag aan het begin van een sessie met Karin, en haal hem hier weg zodra hij beantwoord en verwerkt is.

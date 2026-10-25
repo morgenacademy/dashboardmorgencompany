@@ -3,9 +3,11 @@ import {
   upsertProject, deleteProject,
   upsertTask, deleteTask,
   upsertCustomer, upsertFinance, deleteFinance, nextId,
+  upsertSettlement, deleteSettlement,
 } from './data/store.js';
 import { lineChart, barChart, dualLineChart, teamMonthlyChart } from './ui/charts.js';
 import { renderAnalyse } from './ui/analyse.js';
+import { renderAfsluiting } from './ui/afsluiting.js';
 import {
   actualExpenseEntries,
   buildActualVendorRows,
@@ -1723,6 +1725,7 @@ function renderNavigation(route) {
     ['/taken', 'Taken'],
     ['/finance', 'Finance'],
     ['/klanten', 'Klanten'],
+    ['/afsluiting', 'Afsluiting voor BV'],
   ];
   return `<nav class="side-nav">${items.map(([path, label]) => {
     const active = route.path === path || (path !== '/' && route.path.startsWith(path));
@@ -1744,6 +1747,7 @@ function renderPage(db, route) {
     case '/taken':     return renderTaken(db);
     case '/finance':   return renderFinance(db);
     case '/klanten':   return renderKlanten(db);
+    case '/afsluiting': return renderAfsluiting(db, { escapeHtml, settlementsError: db.settlementsError });
     default:           return renderOverview(db);
   }
 }
@@ -1887,6 +1891,39 @@ function attachEvents() {
       if (!confirm('Deze rit verwijderen?')) return;
       try {
         await deleteFinance(id);
+      } catch (err) {
+        alert('Verwijderen mislukt: ' + err.message);
+      }
+    });
+  });
+
+  // --- Afsluiting voor BV: onderlinge verrekeningen vastleggen ---
+  document.querySelector('form[data-action="afs-add-settlement"]')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const amount = Number(data.amount);
+    if (!amount || amount <= 0) { alert('Vul een bedrag in.'); return; }
+    if (data.from_person === data.to_person) { alert('Van en naar moeten verschillend zijn.'); return; }
+    try {
+      await upsertSettlement({
+        id: nextId('set'),
+        date: data.date,
+        from_person: data.from_person,
+        to_person: data.to_person,
+        amount,
+        description: (data.description || '').trim(),
+      });
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
+  });
+
+  document.querySelectorAll('[data-action="afs-del-settlement"]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.currentTarget.dataset.id;
+      if (!confirm('Deze verrekening verwijderen?')) return;
+      try {
+        await deleteSettlement(id);
       } catch (err) {
         alert('Verwijderen mislukt: ' + err.message);
       }
