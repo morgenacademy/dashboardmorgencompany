@@ -23,7 +23,7 @@ create table if not exists public.settlements (
 -- Zelfde toegang als de andere tabellen: het dashboard is stateless en
 -- schrijft met de anon-key.
 alter table public.settlements enable row level security;
-drop policy if exists "settlements anon all" on public.settlements;
-create policy "settlements anon all" on public.settlements
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists "anon all settlements" on public.settlements;
+create policy "anon all settlements" on public.settlements
+  for all to anon using (true) with check (true);
 grant select, insert, update, delete on public.settlements to anon, authenticated;
