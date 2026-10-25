@@ -1130,6 +1130,4 @@ textarea { resize: vertical; min-height: 130px; }
 .afs-details .an-table td { white-space: normal; }
 .afs-calc td:first-child { white-space: normal; }
 .afs-calc__total td { font-weight: 700; color: var(--text-primary); border-top: 1px solid var(--glass-border); }
-.afs-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 14px; }
-.afs-form label { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; color: var(--text-muted); }
-.afs-form__wide { flex: 1 1 220px; }
+.afs-calc__total--next td { border-top: 0; }
