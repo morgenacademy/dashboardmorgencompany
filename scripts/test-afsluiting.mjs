@@ -118,6 +118,25 @@ const near = (actual, expected, msg) => assert.ok(Math.abs(actual - expected) < 
   near(m.resterendInclOpen, 600, 'saldo als open facturen betaald zijn: (1400 - 200) / 2');
 }
 
+// --- Ritten uit het rittenformulier (category 'Kilometers') zijn kilometers, geen euro's: tellen niet.
+// Reiskosten in euro's staan als gewone kostenregel (vendor 'Reiskosten (km)') en tellen wel.
+{
+  const m = afsluitingModel({ finance: [
+    { id: 'i1', type: 'income', owner: 'Harmen', entity: 'Morgen', amount: 1000, date: '2026-01-01', payment_status: 'ontvangen' },
+    { id: 'trip_1', type: 'expense', owner: 'Harmen', entity: 'Morgen', amount: 78, category: 'Kilometers', vendor: 'Den Bosch - Utrecht', description: 'Rit', date: '2026-03-04', source: 'manual', recurring: 'one_off', payment_status: 'verwacht' },
+    { id: 'trip_2', type: 'expense', owner: 'Karin', entity: 'Morgen', amount: 120, category: 'Kilometers', description: 'Rit', date: '2026-05-06', source: 'manual', recurring: 'one_off', payment_status: 'verwacht' },
+    { id: 'e1', type: 'expense', owner: 'Harmen', entity: 'Morgen', amount: 54.72, category: 'Overig', vendor: 'Reiskosten (km)', date: '2026-03-31', source: 'manual', recurring: 'one_off', payment_status: 'verwacht' },
+  ], settlements: [] });
+  const h = m.personen.Harmen;
+  const k = m.personen.Karin;
+  near(h.uit, 54.72, 'Harmen: alleen reiskosten in euro, geen kilometers');
+  near(k.uit, 0, 'Karin: rit telt niet als kosten');
+  assert.ok(!h.kosten.some((e) => e.category === 'Kilometers'), 'rit staat niet in de kostenlijst');
+  assert.equal(h.geschat.aantal, 1, 'Harmen: rit telt niet als geschatte post');
+  assert.equal(k.geschat.aantal, 0, 'Karin: rit telt niet als geschatte post');
+  near(m.verschuldigd, (1000 - 54.72) / 2, 'saldo zonder kilometers');
+}
+
 // --- Ontbrekende settlements-tabel: model werkt gewoon met een lege lijst.
 {
   const m = afsluitingModel({ finance: [] });
