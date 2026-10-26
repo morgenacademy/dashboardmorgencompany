@@ -12,6 +12,7 @@
 // - Periode: alles t/m 31-12-2026.
 // - Saldo op ontvangen geld; gefactureerd-maar-niet-betaald staat apart.
 // - Eerdere onderlinge betalingen (tabel settlements) gaan van het saldo af.
+// - Ritten (category 'Kilometers') tellen niet: amount is daar kilometers.
 
 export const PERSONEN = ['Harmen', 'Karin'];
 export const PERSOON_LABEL = {
@@ -19,6 +20,8 @@ export const PERSOON_LABEL = {
   Karin: 'Karin (Karin van Tongerlo)',
 };
 const TOT = '2026-12-31';
+// Zelfde waarde als TRIP_CATEGORY in app.js: ritten uit het rittenformulier.
+const TRIP_CATEGORY = 'Kilometers';
 
 const num = (v) => Number(v || 0);
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -58,6 +61,9 @@ export function afsluitingModel(db, { tot = TOT } = {}) {
     if (!p || !e.date || e.date > tot) continue;
     // Eigen BV-kosten van Harmen (iMac, sluitpost) zijn geen Morgen-geld.
     if (e.entity === 'HvH BV') continue;
+    // Een rit heeft kilometers in amount, geen euro's. Reiskosten in euro's
+    // staan als aparte kostenregel (vendor 'Reiskosten (km)').
+    if (e.category === TRIP_CATEGORY) continue;
     const j = e.date.slice(0, 4);
 
     if (e.type === 'income') {
