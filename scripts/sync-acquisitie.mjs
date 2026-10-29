@@ -39,6 +39,7 @@ const FORCE = process.argv.includes('--force');
 
 // Statusmap-prefix → pipeline_status.
 const STATUS_BY_PREFIX = [
+  ['0.', 'verkennen'],         // 0. Lead (nog geen offerte verstuurd)
   ['1.', 'offerte_verzonden'], // 1. Pending
   ['2.', 'geaccepteerd'],      // 2. Geaccepteerd
   ['3.', 'verloren'],          // 3. Afgewezen
