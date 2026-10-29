@@ -31,7 +31,7 @@ Let op: het `npm test`-commando uit de README bestaat **niet** (er is geen `test
 
 - **Merge zelf NIET naar `main`.** Elke merge naar main triggert een betaalde Netlify-deploy van morgendashboard.netlify.app. Werk op een feature-branch (`cockpit`, of de `claude/*`-branch die je is toegewezen), commit en push daar, en laat het mergen aan de gebruiker: die doet dat via een PR wanneer hij er klaar voor is. Let op dat `cockpit` en `main` uit elkaar kunnen lopen; controleer bij het starten welke van de twee jouw vertrekpunt is.
 - **Data zit in Supabase, niet in de repo.** Handmatige datacorrecties gaan via de Supabase MCP (`execute_sql`, project ref `jeqvjtnxgxpjviwhjmzr`), niet via codewijzigingen. RLS staat anon lezen/schrijven toe.
-- **De acquisitie-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (offerte → geaccepteerd → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen.
+- **De acquisitie-map is leidend voor de acquisitie-pipeline.** Statusverschuivingen (lead → offerte → geaccepteerd → gefactureerd → betaald) doe je door bestanden te verplaatsen in de map en te syncen, niet door los in het dashboard te typen. Mappen: `0. Lead` (verkennen, nog geen offerte verstuurd), `1. Pending` (offerte verstuurd), `2. Geaccepteerd`, `3. Afgewezen`, `4. Gefactureerd`, `5. Betaald`.
 - **Draai de sync altijd eerst met `--dry` en lees de uitvoer** voor je live gaat. Hij raakt echt geld: hij schrijft finance-regels en kan seed-regels vervangen. Bij twijfel over een bedrag: pinnen in de overrides, niet gokken.
 
 ## Architectuur
