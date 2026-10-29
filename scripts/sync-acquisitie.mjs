@@ -321,6 +321,9 @@ const INVOICE_FOLDER_PROJECT = {
   // Nacalculatie op uren: elke maandfactuur hoort bij Agentic Teams, niet bij de
   // eerdere Claude Code-training (die heeft z'n eigen MichielPro-pin hierboven).
   pharmapartners: 'prj_acq_2026_07_10_offerte',
+  // Gemeente Tilburg heeft meerdere projecten (keynote, voorlopersprogramma);
+  // deze losse opdracht (ordernummer 376513) heeft een eigen project.
+  'gemeente tilburg tactisch advies': 'prj_tilburg_tactisch_advies',
 };
 
 function normName(s) {
@@ -630,23 +633,32 @@ async function main() {
   const { invoices, flags: invFlags, newCustomers: invNewCustomers, newProjects: invNewProjects, custWithUnreadable } = buildInvoiceRecords(existingCustomers, existingProjects);
 
   // Seed finance-regels die vervangen worden door Karin's facturen: income met
-  // status gefactureerd/ontvangen, op een project van een klant die nu facturen
-  // heeft, en niet zelf door de sync beheerd (fin_acq_*). Forecast (verwacht) blijft.
+  // status gefactureerd/ontvangen, op een project dat nu facturen heeft, en niet
+  // zelf door de sync beheerd (fin_acq_*). Forecast (verwacht) blijft.
+  // Per project, niet per klant: een klant met meerdere projecten (Gemeente Tilburg:
+  // keynote + losse opdracht) zou anders de seed-regel van het andere project
+  // verliezen, terwijl die factuur nergens als factuur wordt ingelezen.
   const projToCust = Object.fromEntries(existingProjects.map((p) => [p.id, p.customer_id]));
   // Alleen klanten met een succesvol geparseerd factuurtotaal > 0 én zonder ook maar
   // één onleesbare factuur. Anders zou bv. Unbeatable PT (1 leesbare factuur €270 +
   // 1 onleesbare €516,46) als "gedekt" gelden en z'n seed-regel van €786 verliezen.
   const invTotalByCust = {};
-  for (const i of invoices) invTotalByCust[i.customer_id] = (invTotalByCust[i.customer_id] || 0) + i.amount;
-  const coveredCustomers = new Set(
-    Object.entries(invTotalByCust).filter(([c, t]) => t > 0 && !custWithUnreadable.has(c)).map(([c]) => c),
+  const invTotalByProj = {};
+  for (const i of invoices) {
+    invTotalByCust[i.customer_id] = (invTotalByCust[i.customer_id] || 0) + i.amount;
+    invTotalByProj[i.project_id] = (invTotalByProj[i.project_id] || 0) + i.amount;
+  }
+  const coveredProjects = new Set(
+    Object.entries(invTotalByProj)
+      .filter(([p, t]) => t > 0 && !custWithUnreadable.has(projToCust[p] ?? invoices.find((i) => i.project_id === p)?.customer_id))
+      .map(([p]) => p),
   );
   const skippedCovered = [...custWithUnreadable].filter((c) => (invTotalByCust[c] || 0) > 0);
   const seedDelete = existingFinance.filter((f) =>
     f.type === 'income' &&
     ['gefactureerd', 'ontvangen'].includes(f.payment_status) &&
     !String(f.id).startsWith('fin_acq_') &&
-    coveredCustomers.has(projToCust[f.project_id]),
+    coveredProjects.has(f.project_id),
   );
 
   // ===== Overzicht: offertes =====
