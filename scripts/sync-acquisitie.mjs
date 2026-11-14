@@ -325,6 +325,8 @@ const INVOICE_FOLDER_PROJECT = {
   // Gemeente Tilburg heeft meerdere projecten (keynote, voorlopersprogramma);
   // deze losse opdracht (ordernummer 376513) heeft een eigen project.
   'gemeente tilburg tactisch advies': 'prj_tilburg_tactisch_advies',
+  // Design thinking workshop Digital Future Event (ordernummer 376666), factuur 2611002.
+  'gemeente tilburg design thinking workshop': 'prj_tilburg_design_thinking',
 };
 
 function normName(s) {
